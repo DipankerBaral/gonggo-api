@@ -1,0 +1,17 @@
+{
+  "name": "gonggo-api",
+  "version": "0.1.0",
+  "description": "GongGo: find and join local games and community events around Wollongong",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
