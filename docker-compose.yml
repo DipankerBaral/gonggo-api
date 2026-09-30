@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    image: gonggo-api:local
+    ports:
+      - "3000:3000"   # your machine's port : the container's port
+    environment:
+      PORT: 3000
+      ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
+      SEED: ${SEED:-true}
+    restart: unless-stopped
