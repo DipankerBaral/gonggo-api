@@ -112,7 +112,7 @@ jobs:
     name: Publish image to GHCR
     runs-on: ubuntu-latest
     needs: docker           # only publish an image that passed the smoke test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     timeout-minutes: 10
 
     # This job needs more than read access: it writes a package to GHCR.
