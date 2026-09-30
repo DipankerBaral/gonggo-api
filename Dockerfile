@@ -18,7 +18,7 @@ USER node
 EXPOSE 3000
 
 # Docker checks this to decide if the container is healthy
-HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
 CMD ["node", "src/server.js"]

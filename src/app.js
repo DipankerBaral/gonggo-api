@@ -1,12 +1,21 @@
 const express = require('express');
+const { pool } = require('./db/pool');
 const gamesRouter = require('./routes/games');
 const adminRouter = require('./routes/admin');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
 
-// Used by Docker, the AWS load balancer and ECS to check the app is alive
-app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+// Used by Docker, the AWS load balancer and ECS to check the app is alive.
+// It also checks the database, so "healthy" means the app can actually work.
+app.get('/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', database: 'ok', uptime: process.uptime() });
+  } catch {
+    res.status(503).json({ status: 'error', database: 'unreachable' });
+  }
+});
 
 app.use('/games', gamesRouter);
 app.use('/admin', adminRouter);

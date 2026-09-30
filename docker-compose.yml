@@ -1,11 +1,37 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gonggo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gonggo}   # dev only; AWS will use Secrets Manager
+      POSTGRES_DB: gonggo
+    ports:
+      - "5433:5432"   # 5433 on your machine, so it won't clash with any Postgres you already have
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # data lives here and survives restarts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gonggo -d gonggo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build: .
     image: gonggo-api:local
+    depends_on:
+      db:
+        condition: service_healthy   # don't start the API until Postgres is ready
     ports:
-      - "3000:3000"   # your machine's port : the container's port
+      - "3000:3000"
     environment:
       PORT: 3000
       ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
       SEED: ${SEED:-true}
+      # Inside Docker's network, the API reaches Postgres by its service name "db"
+      # on the container port 5432 (not localhost:5433, which is your machine's view).
+      DATABASE_URL: postgres://gonggo:${POSTGRES_PASSWORD:-gonggo}@db:5432/gonggo
     restart: unless-stopped
+
+volumes:
+  pgdata:

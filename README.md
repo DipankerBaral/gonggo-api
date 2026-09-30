@@ -5,13 +5,45 @@ running, table tennis and more. See how many spots are left and jump in.
 
 ## Run it
 
+Everything in Docker (API + Postgres):
+
 ```bash
-npm install
-npm start          # http://localhost:3000, with 3 sample games
+docker compose up -d --build    # http://localhost:3000, with 3 sample games
+docker compose logs -f api
+docker compose down             # stop (data is kept in the pgdata volume)
+docker compose down -v          # stop AND delete all data
 ```
 
-Environment variables: `PORT` (default 3000), `ADMIN_KEY` (default `dev-admin-key`, dev only),
-`SEED` (`false` to start empty).
+Or run the API directly on your machine, with only the database in Docker:
+
+```bash
+docker compose up -d db
+npm install
+npm start
+```
+
+## Tests
+
+```bash
+docker compose up -d db
+npm test                                   # Playwright starts the API on port 3001
+BASE_URL=http://localhost:3000 npm test    # or test the full Docker stack
+```
+
+## Configuration
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | 3000 | |
+| `DATABASE_URL` | `postgres://gonggo:gonggo@localhost:5433/gonggo` | compose sets this to the `db` service |
+| `ADMIN_KEY` | `dev-admin-key` | dev only, always set in real environments |
+| `SEED` | true | adds 3 sample games to an empty database |
+
+## Database
+
+Postgres 16. Migrations live in `src/db/migrations` and run automatically on startup
+(or `npm run migrate`). To change the schema, add a new numbered `.sql` file; never edit one
+that has already run.
 
 ## Auth (temporary)
 
@@ -42,3 +74,5 @@ Real logins come later in the roadmap.
 - Locations must be inside the Illawarra region.
 - Tournaments start as `pending_payment` and stay hidden until approved (Stripe comes later).
 - Hosts take the first spot and can't leave their own game, only cancel it.
+- Joining and posting are safe under concurrency: row locks stop two people taking the last
+  spot, and an advisory lock stops one person double-posting.

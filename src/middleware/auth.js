@@ -3,14 +3,15 @@
 // logins (JWT or AWS Cognito) later in the roadmap.
 const store = require('../store');
 const config = require('../config');
+const asyncHandler = require('../asyncHandler');
 
-function requireUser(req, res, next) {
+const requireUser = asyncHandler(async (req, res, next) => {
   const userId = (req.get('x-user-id') || '').trim();
   if (!userId) return res.status(401).json({ error: 'Missing x-user-id header' });
-  if (store.isBanned(userId)) return res.status(403).json({ error: 'This account has been banned' });
+  if (await store.isBanned(userId)) return res.status(403).json({ error: 'This account has been banned' });
   req.userId = userId;
   next();
-}
+});
 
 function requireAdmin(req, res, next) {
   if (req.get('x-admin-key') !== config.adminKey) {

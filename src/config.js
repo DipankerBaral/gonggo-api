@@ -4,6 +4,10 @@ const config = {
   port: Number(process.env.PORT) || 3000,
   adminKey: process.env.ADMIN_KEY || 'dev-admin-key',
   seed: process.env.SEED !== 'false',
+  // Default points at the Postgres container from docker-compose, as seen from
+  // your own machine (port 5433). Inside Docker, compose overrides this to use
+  // the service name "db" instead of localhost.
+  databaseUrl: process.env.DATABASE_URL || 'postgres://gonggo:gonggo@localhost:5433/gonggo',
 };
 
 if (!process.env.ADMIN_KEY) {
