@@ -5,11 +5,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # "Run workflow" button, e.g. to redeploy after turning deploys on
 
-# If you push again while a run is still going, cancel the old one
+# On pull requests, a new push cancels the older run. On main we never cancel,
+# because stopping a deploy halfway through could leave AWS half-updated.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: this workflow only needs to read the code
 permissions:
@@ -166,4 +168,117 @@ jobs:
             echo '```'
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Job 4: deploy to AWS. Takes the exact image that passed every test (from
+  # GHCR), copies it into ECR, then runs Terraform with that image tag.
+  # Only runs when the repo variable DEPLOY_ENABLED is 'true', so you can
+  # switch deploys off while the infrastructure is destroyed.
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: publish
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    timeout-minutes: 30
+
+    # Only one deploy at a time, and never cancel one that has started
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+      packages: read    # pull the tested image from GHCR
+      id-token: write   # OIDC login to AWS
+
+    env:
+      AWS_REGION: ap-southeast-2
+      GHCR_IMAGE: ghcr.io/dipankerbaral/gonggo-api
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      - name: Work out the image tag
+        run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"   # same 7-character sha the publish job used
+
+      - name: Log in to AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to GHCR and ECR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          ECR_REPO=$(aws ecr describe-repositories --repository-names gonggo-api --query 'repositories[0].repositoryUri' --output text)
+          echo "ECR_REPO=$ECR_REPO" >> "$GITHUB_ENV"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_REPO%%/*}"
+
+      # Build once, deploy many: we don't rebuild. We copy the image that
+      # already passed the tests, so what runs in AWS is exactly what was tested.
+      - name: Copy the tested image into ECR
+        run: |
+          if aws ecr describe-images --repository-name gonggo-api --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "Image $TAG is already in ECR (a re-run), skipping the push"
+          else
+            docker pull "$GHCR_IMAGE:sha-$TAG"
+            docker tag "$GHCR_IMAGE:sha-$TAG" "$ECR_REPO:$TAG"
+            docker push "$ECR_REPO:$TAG"
+          fi
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false   # plain output, so terraform output -raw works in scripts
+
+      - name: Terraform init
+        run: terraform -chdir=infra init -input=false
+
+      - name: Terraform plan
+        run: |
+          set -o pipefail   # without this, a failed plan would be hidden by tee
+          terraform -chdir=infra plan -input=false -no-color -var="image_tag=$TAG" -out=tfplan | tee plan.txt
+          {
+            echo "### Terraform plan"
+            echo '```'
+            grep -E '^(Plan:|No changes)' plan.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform apply
+        run: terraform -chdir=infra apply -input=false tfplan   # applies exactly the plan above
+
+      - name: Wait for ECS to finish rolling out
+        run: |
+          CLUSTER=$(terraform -chdir=infra output -raw ecs_cluster)
+          SERVICE=$(terraform -chdir=infra output -raw ecs_service)
+          EXPECTED=$(terraform -chdir=infra output -raw task_definition_arn)
+
+          echo "Waiting for $SERVICE to become stable..."
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+
+          # "Stable" can also mean ECS rolled BACK to the old version after the
+          # new one failed its health checks. Make sure the new version won.
+          read -r RUNNING STATE < <(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState]' --output text)
+          echo "Running: $RUNNING ($STATE)"
+          echo "Expected: $EXPECTED"
+          if [ "$RUNNING" != "$EXPECTED" ] || [ "$STATE" != "COMPLETED" ]; then
+            echo "::error::The new version did not become healthy. ECS rolled back to the previous version. Check the logs in CloudWatch."
+            exit 1
+          fi
+
+      - name: Smoke test the live app
+        run: |
+          URL=$(terraform -chdir=infra output -raw app_url)
+          for i in $(seq 1 10); do
+            if curl -fsS "$URL/health"; then echo; break; fi
+            echo "Not ready yet (attempt $i/10), retrying..."; sleep 10
+            [ "$i" = 10 ] && exit 1
+          done
+          curl -fsS "$URL/games" > /dev/null
+          {
+            echo "### Deployed \`$TAG\`"
+            echo "$URL/games"
           } >> "$GITHUB_STEP_SUMMARY"

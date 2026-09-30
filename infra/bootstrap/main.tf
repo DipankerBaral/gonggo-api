@@ -4,6 +4,7 @@
 #   1. An S3 bucket to hold the main stack's Terraform state
 #   2. GitHub's OIDC identity provider, so GitHub Actions can log in to AWS
 #   3. A deploy role that GitHub Actions (main branch only) is allowed to use
+#   4. The ECR image registry (long-lived, so destroying the app keeps images)
 #
 # Run once, by hand, from your laptop. Its own state stays local, because it
 # can't store its state in a bucket it hasn't created yet (chicken and egg).
@@ -36,12 +37,6 @@ provider "aws" {
 variable "aws_region" {
   type    = string
   default = "ap-southeast-2"
-}
-
-variable "github_repo" {
-  description = "owner/name of the GitHub repo allowed to deploy"
-  type        = string
-  default     = "DipankerBaral/gonggo-api"
 }
 
 data "aws_caller_identity" "current" {}
@@ -211,10 +206,46 @@ resource "aws_iam_role_policy" "deploy" {
   policy = data.aws_iam_policy_document.deploy.json
 }
 
+# --- 4. ECR image registry ---------------------------------------------------
+# Lives here rather than in the main stack so "terraform destroy" on the app
+# doesn't delete your images, and the pipeline always has somewhere to push.
+
+resource "aws_ecr_repository" "api" {
+  name                 = "gonggo-api"
+  image_tag_mutability = "IMMUTABLE" # a tag can't be overwritten: sha tags always mean one exact build
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true # free basic scan for known vulnerabilities
+  }
+}
+
+# Keep only the 10 newest images so storage costs stay tiny
+resource "aws_ecr_lifecycle_policy" "api" {
+  repository = aws_ecr_repository.api.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep the last 10 images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 10
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 # --- Outputs -----------------------------------------------------------------
 
 output "state_bucket" {
   value = aws_s3_bucket.state.bucket
+}
+
+output "ecr_repository_url" {
+  value = aws_ecr_repository.api.repository_url
 }
 
 output "deploy_role_arn" {
