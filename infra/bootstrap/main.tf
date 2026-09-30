@@ -127,7 +127,9 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+      # GitHub includes immutable owner and repo IDs, so a deleted or renamed
+      # repo's name can't be reused by someone else to get into this role
+      values = ["repo:DipankerBaral@39428181/gonggo-api@1397703369:ref:refs/heads/main"]
     }
   }
 }
