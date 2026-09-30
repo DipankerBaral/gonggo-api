@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10" # needed for S3 use_lockfile
 
   required_providers {
     aws = {
@@ -12,8 +12,16 @@ terraform {
     }
   }
 
-  # State is stored locally for now (terraform.tfstate, git-ignored because it
-  # contains secrets). Later we'll move it to S3 so CI can use it too.
+  # State lives in S3 (created by infra/bootstrap), so your laptop and GitHub
+  # Actions share one copy. use_lockfile stops two applies running at once.
+  # Backend settings can't use variables, so the bucket name is written out.
+  backend "s3" {
+    bucket       = "gonggo-tfstate-477554785759"
+    key          = "infra/terraform.tfstate"
+    region       = "ap-southeast-2"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {

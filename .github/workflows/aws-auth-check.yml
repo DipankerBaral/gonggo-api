@@ -1,0 +1,25 @@
+name: AWS auth check
+
+# Run by hand from the Actions tab to prove GitHub can log in to AWS via OIDC.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # lets the job request an OIDC token from GitHub
+  contents: read
+
+jobs:
+  whoami:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to AWS with OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-southeast-2
+
+      - name: Who am I?
+        run: aws sts get-caller-identity
+
+      - name: Can I read the Terraform state bucket?
+        run: aws s3 ls s3://gonggo-tfstate-477554785759/infra/
