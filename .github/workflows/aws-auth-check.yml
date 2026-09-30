@@ -12,8 +12,10 @@ jobs:
   whoami:
     runs-on: ubuntu-latest
     steps:
-      - name: Show OIDC token claims (debug)
-        uses: actions/github-script@v7
+      # Prints the token's identity claims (never the token itself), so a
+      # trust-policy mismatch is easy to spot if login ever fails again
+      - name: Show OIDC token claims (for troubleshooting)
+        uses: actions/github-script@v8
         with:
           script: |
             const token = await core.getIDToken('sts.amazonaws.com');
@@ -31,5 +33,7 @@ jobs:
       - name: Who am I?
         run: aws sts get-caller-identity
 
+      # list-objects-v2 returns a count (0 when empty) instead of failing,
+      # so this checks access to the bucket rather than whether state exists yet
       - name: Can I read the Terraform state bucket?
-        run: aws s3 ls s3://gonggo-tfstate-477554785759/infra/
+        run: aws s3api list-objects-v2 --bucket gonggo-tfstate-477554785759 --prefix infra/ --query 'KeyCount'
