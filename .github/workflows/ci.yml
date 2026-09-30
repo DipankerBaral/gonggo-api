@@ -1,0 +1,105 @@
+name: CI
+
+# When to run: every push to main, and every pull request
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# If you push again while a run is still going, cancel the old one
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this workflow only needs to read the code
+permissions:
+  contents: read
+
+jobs:
+  # Job 1: run the tests against the code directly, with Postgres as a service
+  test:
+    name: API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # GitHub starts this Postgres container before the steps run
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gonggo
+          POSTGRES_PASSWORD: gonggo
+          POSTGRES_DB: gonggo
+        ports:
+          - 5433:5432   # same port as local, so the default DATABASE_URL just works
+        options: >-
+          --health-cmd "pg_isready -U gonggo -d gonggo"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm        # reuse downloaded packages between runs
+
+      - name: Install dependencies
+        run: npm ci         # like npm install, but exact versions from the lockfile
+
+      - name: Run Playwright API tests
+        run: npm test
+        env:
+          ADMIN_KEY: ci-admin-key
+
+      - name: Upload test report
+        if: ${{ !cancelled() }}   # keep the report even when tests fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  # Job 2: build the real Docker image, run the full stack, test it
+  docker:
+    name: Docker build and smoke test
+    runs-on: ubuntu-latest
+    needs: test             # only bother if the tests passed
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Build and start the stack
+        run: docker compose up -d --build --wait   # --wait blocks until both containers are healthy
+        env:
+          ADMIN_KEY: ci-admin-key
+          SEED: 'false'
+
+      - name: Run tests against the containers
+        run: npm test
+        env:
+          BASE_URL: http://localhost:3000
+          ADMIN_KEY: ci-admin-key
+
+      - name: Show container logs if something failed
+        if: failure()
+        run: docker compose logs
+
+      - name: Clean up
+        if: always()
+        run: docker compose down -v

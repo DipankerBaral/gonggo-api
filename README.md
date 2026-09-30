@@ -1,5 +1,7 @@
 # GongGo API
 
+[![CI](https://github.com/DipankerBaral/gonggo-api/actions/workflows/ci.yml/badge.svg)](https://github.com/DipankerBaral/gonggo-api/actions/workflows/ci.yml)
+
 Find and join local games and community events around Wollongong: soccer, basketball,
 running, table tennis and more. See how many spots are left and jump in.
 
@@ -38,6 +40,13 @@ BASE_URL=http://localhost:3000 npm test    # or test the full Docker stack
 | `DATABASE_URL` | `postgres://gonggo:gonggo@localhost:5433/gonggo` | compose sets this to the `db` service |
 | `ADMIN_KEY` | `dev-admin-key` | dev only, always set in real environments |
 | `SEED` | true | adds 3 sample games to an empty database |
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
+
+1. **API tests**: Playwright against the code, with Postgres as a service container
+2. **Docker build and smoke test**: builds the image, starts the full stack with Compose, and runs the same tests against the containers
 
 ## Database
 

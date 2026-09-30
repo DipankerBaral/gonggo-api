@@ -20,7 +20,7 @@ module.exports = defineConfig({
         command: 'node src/server.js',
         url: `${baseURL}/health`,
         reuseExistingServer: !process.env.CI,
-        timeout: 15_000,
+        timeout: 30_000,
         env: {
           PORT: String(PORT),
           SEED: 'false', // start empty so tests control all the data
