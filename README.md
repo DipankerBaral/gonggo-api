@@ -47,6 +47,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
 
 1. **API tests**: Playwright against the code, with Postgres as a service container
 2. **Docker build and smoke test**: builds the image, starts the full stack with Compose, and runs the same tests against the containers
+3. **Publish** (pushes to `main` only): pushes the image to GitHub Container Registry as
+   `ghcr.io/dipankerbaral/gonggo-api`, tagged `sha-<commit>` and `latest`
+
+```bash
+docker pull ghcr.io/dipankerbaral/gonggo-api:latest
+```
 
 ## Database
 
