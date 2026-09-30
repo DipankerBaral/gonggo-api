@@ -1,0 +1,13 @@
+# Provider downloads
+.terraform/
+
+# State files contain secrets (database password, admin key). Never commit them.
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Local variable overrides
+*.tfvars
+!example.tfvars
+
+# Note: .terraform.lock.hcl SHOULD be committed (it pins provider versions)
