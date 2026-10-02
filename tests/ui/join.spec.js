@@ -1,4 +1,4 @@
-const { test, expect, signInAs, uniqueTitle, newUser, createGame } = require('./fixtures');
+const { test, expect, signInAs, completeWelcome, uniqueTitle, newUser, createGame } = require('./fixtures');
 
 test.describe('Joining a game', () => {
   test('a signed-out visitor is asked to sign in, then joins', async ({ page, request }) => {
@@ -11,6 +11,7 @@ test.describe('Joining a game', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByLabel('First name').fill('Jordan');
     await dialog.getByRole('button', { name: 'Sign in' }).click();
+    await completeWelcome(page); // first time: date of birth and the terms
 
     await expect(page.getByRole('status')).toHaveText("You're in.");
     await expect(page.getByTestId('players')).toContainText('Jordan (you)');
@@ -39,6 +40,7 @@ test.describe('Joining a game', () => {
 
     await dialog.getByLabel('First name').fill('Sam');
     await dialog.getByRole('button', { name: 'Sign in' }).click();
+    await completeWelcome(page);
     await expect(page.getByRole('status')).toHaveText("You're in.");
   });
 
@@ -70,7 +72,7 @@ test.describe('Joining a game', () => {
 
   test('a full game cannot be joined', async ({ page, request }) => {
     const game = await createGame(request, newUser('host'), { title: uniqueTitle('Singles'), capacity: 2 });
-    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('p') } });
+    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('p'), 'x-dev-consent': 'yes' } });
     await signInAs(page, 'Late');
 
     await page.goto(`/#/game/${game.id}`);
@@ -82,7 +84,7 @@ test.describe('Joining a game', () => {
     const host = await signInAs(page, 'Hosty');
     // Create the game as this browser's user, via the API
     const res = await page.request.post('/games', {
-      headers: { 'x-user-id': host.id },
+      headers: { 'x-user-id': host.id, 'x-dev-consent': 'yes' },
       data: {
         title: uniqueTitle('Cancel me'), sport: 'soccer', capacity: 6,
         startsAt: new Date(Date.now() + 3 * 864e5).toISOString(),

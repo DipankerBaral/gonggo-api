@@ -35,8 +35,8 @@ test.describe('Accessibility', () => {
   test('game page with comments, signed in', async ({ page, request }) => {
     const me = await signInAs(page, 'Ally');
     const game = await createGame(request, newUser('host'), { title: uniqueTitle('A11y comments') });
-    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id } });
-    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id }, data: { body: 'See you there' } });
+    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' } });
+    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' }, data: { body: 'See you there' } });
     await page.goto(`/#/game/${game.id}`);
     await expect(page.getByTestId('comments')).toBeVisible();
     await expectNoViolations(page);
@@ -45,6 +45,21 @@ test.describe('Accessibility', () => {
   test('sign-in dialog', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expectNoViolations(page);
+  });
+
+  test('admin page', async ({ page }) => {
+    await signInAs(page, 'Mod', { admin: true });
+    await page.goto('/#/admin');
+    await expect(page.getByRole('heading', { name: 'Admin', exact: true })).toBeVisible();
+    await expectNoViolations(page);
+  });
+
+  test('delete account dialog', async ({ page }) => {
+    await signInAs(page, 'Careful');
+    await page.goto('/#/me');
+    await page.getByRole('button', { name: 'Delete my account' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expectNoViolations(page);
   });

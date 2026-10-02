@@ -50,3 +50,8 @@ output "local_env" {
     AUTH_PROVIDERS=${join(",", concat(local.google_enabled ? ["google"] : [], local.apple_enabled ? ["apple"] : []))}
   EOT
 }
+
+output "make_admin_command" {
+  description = "Run this (with your sign-up email) to make yourself an admin, then sign out and in again"
+  value       = "aws cognito-idp admin-add-user-to-group --user-pool-id ${aws_cognito_user_pool.main.id} --group-name admins --username YOUR_EMAIL"
+}

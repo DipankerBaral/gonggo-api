@@ -1,4 +1,4 @@
-const { test, expect, signInAs, uniqueTitle } = require('./fixtures');
+const { test, expect, signInAs, completeWelcome, uniqueTitle } = require('./fixtures');
 
 // A datetime-local value for 3 days from now at 6:30pm
 function inThreeDays() {
@@ -28,6 +28,7 @@ test.describe('Posting a game', () => {
     const dialog = page.getByRole('dialog', { name: 'Sign in to post a game' });
     await dialog.getByLabel('First name').fill('Newhost');
     await dialog.getByRole('button', { name: 'Sign in' }).click();
+    await completeWelcome(page);
     await expect(page.getByLabel("What's the game?")).toBeVisible(); // the form appears once signed in
   });
 

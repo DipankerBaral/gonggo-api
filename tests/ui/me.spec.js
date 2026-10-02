@@ -26,9 +26,9 @@ test.describe('My games', () => {
   test('shows games I host and games I joined', async ({ page, request }) => {
     const me = await signInAs(page, 'Kai');
     const hosting = uniqueTitle('My futsal');
-    await page.request.post('/games', { headers: { 'x-user-id': me.id }, data: futureGame(hosting) });
+    await page.request.post('/games', { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' }, data: futureGame(hosting) });
     const joined = await createGame(request, newUser('host'), { title: uniqueTitle('Their run') });
-    await page.request.post(`/games/${joined.id}/join`, { headers: { 'x-user-id': me.id } });
+    await page.request.post(`/games/${joined.id}/join`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' } });
 
     await page.goto('/');
     await page.getByRole('button', { name: 'Kai' }).click();
@@ -46,8 +46,8 @@ test.describe('My games', () => {
     const me = await signInAs(page, 'Lee');
     const host = newUser('host');
     const game = await createGame(request, host, { title: uniqueTitle('Rained out') });
-    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id } });
-    await request.delete(`/games/${game.id}`, { headers: { 'x-user-id': host } });
+    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' } });
+    await request.delete(`/games/${game.id}`, { headers: { 'x-user-id': host, 'x-dev-consent': 'yes' } });
 
     await page.goto('/#/me');
     await expect(page.getByTestId('game-row').filter({ hasText: game.title })).toContainText('Cancelled');
@@ -56,7 +56,7 @@ test.describe('My games', () => {
   test('changing my name keeps my games', async ({ page, request }) => {
     const me = await signInAs(page, 'Old');
     const game = await createGame(request, newUser('host'), { title: uniqueTitle('Keep me') });
-    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id } });
+    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' } });
 
     await page.goto('/#/me');
     await page.getByRole('button', { name: 'Change name' }).click();

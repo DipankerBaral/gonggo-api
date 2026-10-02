@@ -27,7 +27,7 @@ test.describe('Browsing games', () => {
   test('warns when only the last spots are left', async ({ page, request }) => {
     const title = uniqueTitle('Doubles');
     const game = await createGame(request, newUser('host'), { title, capacity: 3 });
-    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('p') } });
+    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('p'), 'x-dev-consent': 'yes' } });
 
     await page.goto('/');
     const spots = page.getByTestId('game-row').filter({ hasText: title }).getByTestId('spots-left');

@@ -6,7 +6,7 @@ const soon = (seconds) => new Date(Date.now() + seconds * 1000).toISOString();
 async function hostedGame(page, overrides = {}) {
   const host = await signInAs(page, 'Hostess');
   const res = await page.request.post('/games', {
-    headers: { 'x-user-id': host.id, 'x-user-name': 'Hostess' },
+    headers: { 'x-user-id': host.id, 'x-dev-consent': 'yes', 'x-user-name': 'Hostess' },
     data: {
       title: uniqueTitle('Hosted'), sport: 'soccer', capacity: 8, durationMinutes: 90,
       startsAt: new Date(Date.now() + 3 * 864e5).toISOString(),
@@ -26,7 +26,7 @@ test.describe('Host tools', () => {
 
   test('the host can edit a game, and everyone keeps their spot', async ({ page, request }) => {
     const { game } = await hostedGame(page);
-    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('keeper') } });
+    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('keeper'), 'x-dev-consent': 'yes' } });
 
     await page.goto(`/#/game/${game.id}`);
     await page.getByRole('link', { name: 'Edit game' }).click();
@@ -56,8 +56,8 @@ test.describe('Host tools', () => {
   test('the host can remove a player', async ({ page, request }) => {
     const { game } = await hostedGame(page);
     const trouble = newUser('trouble');
-    await request.patch('/me', { headers: { 'x-user-id': trouble }, data: { name: 'Trouble' } });
-    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': trouble } });
+    await request.patch('/me', { headers: { 'x-user-id': trouble, 'x-dev-consent': 'yes' }, data: { name: 'Trouble' } });
+    await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': trouble, 'x-dev-consent': 'yes' } });
 
     await page.goto(`/#/game/${game.id}`);
     page.once('dialog', (d) => d.accept()); // "Remove Trouble from this game?"
@@ -71,7 +71,7 @@ test.describe('Host tools', () => {
   test('players do not see remove buttons', async ({ page, request }) => {
     const me = await signInAs(page, 'Regular');
     const game = await createGame(request, newUser('host'));
-    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id } });
+    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' } });
     await page.goto(`/#/game/${game.id}`);
     await expect(page.getByRole('button', { name: /^Remove/ })).toHaveCount(0);
   });

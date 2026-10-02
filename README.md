@@ -86,7 +86,9 @@ Anyone can browse games. Joining, posting, commenting and My games need an accou
 - **On your laptop and in tests:** dev sign-in. Type a first name, or send `x-user-id`
   (and optionally `x-user-name`) headers. The server refuses this mode in production
   unless `ALLOW_DEV_AUTH=true` is set on purpose, which docker-compose and CI do and AWS never does.
-- **Admin routes:** `x-admin-key: <ADMIN_KEY>`.
+- **Admins:** people in the Cognito `admins` group (see `terraform output make_admin_command`)
+  get the Admin page. Scripts and tests can still use `x-admin-key: <ADMIN_KEY>`. In dev
+  sign-in, send `x-user-groups: admins` to act as an admin.
 
 To turn on Google or Apple sign-in, see `infra/auth.tf`. Cognito only accepts `https://`
 return addresses (plus `http://localhost`), so real sign-in on AWS needs a domain with HTTPS.
@@ -108,10 +110,19 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 | GET | /me/games | user | games I host or joined: upcoming, plus the last 30 days |
 | GET | /me | user | my profile (`name` is null until chosen) |
 | PATCH | /me | user | choose or change my name (`{"name": "Sam"}`) |
+| POST | /me/consent | user | confirm 18+ and accept the terms (`{"dateOfBirth": "1996-04-23", "acceptTerms": true}`) |
 | GET | /games/:id/comments | player | the game's comments, oldest first |
 | POST | /games/:id/comments | player | post a comment (`{"body": "..."}`, up to 500 characters) |
 | DELETE | /games/:id/comments/:commentId | author or host | delete a comment |
 | GET | /config | anyone | what the browser needs to start sign-in (no secrets) |
+| POST | /games/:id/comments/:commentId/report | player | report someone else's comment |
+| DELETE | /me | user | delete my account and everything in it (incl. the Cognito sign-in) |
+| GET | /admin/reported | admin | reported games and comments, with reasons |
+| POST | /admin/games/:id/reports/dismiss | admin | clear a game's reports, keep the game |
+| DELETE | /admin/comments/:commentId | admin | delete a comment |
+| POST | /admin/comments/:commentId/reports/dismiss | admin | clear a comment's reports, keep it |
+| GET | /admin/banned | admin | banned people |
+| POST | /admin/users/:userId/unban | admin | unban someone |
 | GET | /admin/games | admin | all games, most-reported first |
 | GET | /admin/reports | admin | all reports |
 | POST | /admin/games/:id/remove | admin | take a game down (`{"reason": "..."}`) |
@@ -131,6 +142,11 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 - Tournaments start as `pending_payment` and stay hidden until approved (Stripe comes later).
 - Hosts take the first spot and can't leave their own game, only cancel it.
 - Comments are visible only to the game's players and host.
+- Everyone confirms they're 18+ and accepts the current Terms of Use and Privacy Policy
+  (`TERMS_VERSION` in `src/constants.js`) before posting, joining or commenting. The date
+  of birth is checked and never stored. Bump `TERMS_VERSION` to ask everyone again.
+- `public/terms.html` and `public/privacy.html` are drafts: have them reviewed before launch,
+  and fill in the `[contact email]`.
 - Joining and posting are safe under concurrency: row locks stop two people taking the last
   spot, and an advisory lock stops one person double-posting.
 

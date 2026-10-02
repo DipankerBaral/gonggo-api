@@ -162,3 +162,13 @@ resource "aws_cognito_user_pool_client" "web" {
 
   depends_on = [aws_cognito_identity_provider.google, aws_cognito_identity_provider.apple]
 }
+
+# --- Admins -----------------------------------------------------------------
+# People in this group see the admin page. Add yourself after signing up:
+#   terraform output -raw make_admin_command   (then put in your email)
+
+resource "aws_cognito_user_group" "admins" {
+  name         = "admins"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "GongGo moderators: can review reports, remove content and ban people"
+}

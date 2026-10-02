@@ -6,7 +6,7 @@ const store = require('../store');
 const { requireUser } = require('../middleware/auth');
 const { fallbackName } = require('../validation');
 const ah = require('../asyncHandler');
-const { commentLimit } = require('../middleware/rateLimit');
+const { commentLimit, reportLimit } = require('../middleware/rateLimit');
 
 const router = express.Router({ mergeParams: true });
 const MAX_LENGTH = 500;
@@ -60,6 +60,25 @@ router.delete('/:commentId', requireUser, ah(async (req, res) => {
   }
   await store.deleteComment(comment.id);
   res.status(204).end();
+}));
+
+// Report someone else's comment for the admins to look at
+router.post('/:commentId/report', requireUser, reportLimit, ah(async (req, res) => {
+  const game = await gameForPlayer(req, res);
+  if (!game) return;
+  const comment = await store.getCommentInGame(game.id, req.params.commentId);
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  if (comment.userId === req.userId) return res.status(400).json({ error: "You can't report your own comment; delete it instead" });
+
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (reason.length < 3 || reason.length > 300) return res.status(400).json({ errors: ['reason must be 3-300 characters'] });
+
+  try {
+    res.status(201).json(await store.addCommentReport(comment.id, req.userId, reason));
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'You have already reported this comment' });
+    throw err;
+  }
 }));
 
 module.exports = router;

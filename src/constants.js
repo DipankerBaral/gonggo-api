@@ -42,10 +42,15 @@ const RATE_LIMITS = {
   profile: { max: 20, windowMinutes: 60 },
 };
 
+// The version of the Terms of Use and Privacy Policy people must accept.
+// Change this when either changes in a meaningful way: everyone is asked again.
+const TERMS_VERSION = '2026-10-02';
+const MIN_AGE = 18;
+
 const MIN_CAPACITY = 2;
 const MAX_CAPACITY = 100;
 
 module.exports = {
   SPORTS, REGION_BOUNDS, MIN_CAPACITY, MAX_CAPACITY, MAX_ACTIVE_GAMES, HISTORY_DAYS,
-  MIN_DURATION, MAX_DURATION, DEFAULT_DURATION, RATE_LIMITS,
+  MIN_DURATION, MAX_DURATION, DEFAULT_DURATION, RATE_LIMITS, TERMS_VERSION, MIN_AGE,
 };

@@ -136,7 +136,12 @@ window.GongGoAuth = (function () {
     const session = await freshSession();
     if (!session) return {};
     if (cfg.mode === 'cognito') return { Authorization: `Bearer ${session.idToken}` };
-    return { 'x-user-id': session.id, ...(session.name ? { 'x-user-name': encodeURIComponent(session.name) } : {}) };
+    return {
+      'x-user-id': session.id,
+      ...(session.name ? { 'x-user-name': encodeURIComponent(session.name) } : {}),
+      ...(session.groups ? { 'x-user-groups': session.groups.join(',') } : {}), // dev only: e.g. admins
+      ...(session.devConsent ? { 'x-dev-consent': 'yes' } : {}), // dev only: automated tests start already agreed
+    };
   }
 
   function devSignIn(name) {

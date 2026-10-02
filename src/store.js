@@ -221,8 +221,17 @@ async function ensureUser({ id, email, suggestedName }) {
      ON CONFLICT (id) DO UPDATE SET
        email = COALESCE(EXCLUDED.email, users.email),
        display_name = COALESCE(users.display_name, EXCLUDED.display_name)
-     RETURNING id, display_name AS name, email`,
+     RETURNING id, display_name AS name, email, terms_version AS "termsVersion"`,
     [id, email, suggestedName],
+  );
+  return rows[0];
+}
+
+async function recordConsent(id, termsVersion) {
+  const { rows } = await pool.query(
+    `UPDATE users SET adult_confirmed_at = now(), terms_accepted_at = now(), terms_version = $2, updated_at = now()
+     WHERE id = $1 RETURNING id, display_name AS name, email, terms_version AS "termsVersion"`,
+    [id, termsVersion],
   );
   return rows[0];
 }
@@ -230,7 +239,7 @@ async function ensureUser({ id, email, suggestedName }) {
 async function setDisplayName(id, name) {
   const { rows } = await pool.query(
     `UPDATE users SET display_name = $2, updated_at = now() WHERE id = $1
-     RETURNING id, display_name AS name, email`,
+     RETURNING id, display_name AS name, email, terms_version AS "termsVersion"`,
     [id, name],
   );
   return rows[0] || null;
@@ -279,6 +288,92 @@ async function deleteComment(commentId) {
   await pool.query('DELETE FROM comments WHERE id = $1', [commentId]);
 }
 
+// ---- comment reports and moderation
+
+async function getCommentInGame(gameId, commentId) {
+  if (!isUuid(commentId)) return null;
+  const { rows } = await pool.query(
+    'SELECT id, user_id AS "userId", body FROM comments WHERE game_id = $1 AND id = $2', [gameId, commentId]);
+  return rows[0] || null;
+}
+
+async function addCommentReport(commentId, reporterId, reason) {
+  const { rows } = await pool.query(
+    `INSERT INTO comment_reports (comment_id, reporter_id, reason) VALUES ($1, $2, $3)
+     RETURNING id, comment_id AS "commentId", reason, created_at AS "createdAt"`,
+    [commentId, reporterId, reason],
+  );
+  return rows[0];
+}
+
+// Every reported comment, with its game, author and the reasons given
+async function listReportedComments() {
+  const { rows } = await pool.query(`
+    SELECT c.id, c.body, c.user_id AS "authorId", u.display_name AS "authorName",
+           c.created_at AS "createdAt", g.id AS "gameId", g.title AS "gameTitle",
+           json_agg(json_build_object('reason', r.reason, 'createdAt', r.created_at) ORDER BY r.created_at) AS reports
+    FROM comment_reports r
+    JOIN comments c ON c.id = r.comment_id
+    JOIN games g ON g.id = c.game_id
+    LEFT JOIN users u ON u.id = c.user_id
+    GROUP BY c.id, u.display_name, g.id
+    ORDER BY count(*) DESC, max(r.created_at) DESC`);
+  return rows;
+}
+
+// Every reported game that hasn't been removed, with the reasons
+async function listReportedGames() {
+  const { rows } = await pool.query(`
+    SELECT g.id, g.title, g.status, g.host_id AS "hostId", u.display_name AS "hostName", g.starts_at AS "startsAt",
+           json_agg(json_build_object('reason', r.reason, 'createdAt', r.created_at) ORDER BY r.created_at) AS reports
+    FROM reports r
+    JOIN games g ON g.id = r.game_id
+    LEFT JOIN users u ON u.id = g.host_id
+    WHERE g.status <> 'removed'
+    GROUP BY g.id, u.display_name
+    ORDER BY count(*) DESC, max(r.created_at) DESC`);
+  return rows;
+}
+
+async function findComment(commentId) {
+  if (!isUuid(commentId)) return null;
+  const { rows } = await pool.query('SELECT id, user_id AS "userId", game_id AS "gameId" FROM comments WHERE id = $1', [commentId]);
+  return rows[0] || null;
+}
+
+const dismissGameReports = (gameId) => pool.query('DELETE FROM reports WHERE game_id = $1', [gameId]);
+const dismissCommentReports = (commentId) => pool.query('DELETE FROM comment_reports WHERE comment_id = $1', [commentId]);
+
+async function unbanUser(userId) {
+  const { rowCount } = await pool.query('DELETE FROM banned_users WHERE user_id = $1', [userId]);
+  return rowCount > 0;
+}
+
+async function listBanned() {
+  const { rows } = await pool.query(`
+    SELECT b.user_id AS "userId", u.display_name AS name, b.banned_at AS "bannedAt"
+    FROM banned_users b LEFT JOIN users u ON u.id = b.user_id ORDER BY b.banned_at DESC`);
+  return rows;
+}
+
+// ---- deleting an account: everything that belongs to this person, in one go
+
+async function deleteUserData(userId) {
+  return withTransaction(async (client) => {
+    // Games they host (players, comments and reports go with them)
+    const hosted = await client.query('DELETE FROM games WHERE host_id = $1 RETURNING id', [userId]);
+    // Their spot in other people's games, their comments and the reports they made
+    await client.query('DELETE FROM game_players WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM comments WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM comment_reports WHERE reporter_id = $1', [userId]);
+    await client.query('DELETE FROM reports WHERE reporter_id = $1', [userId]);
+    await client.query('DELETE FROM game_removed_players WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM users WHERE id = $1', [userId]);
+    // A ban (just an id) is kept on purpose, so deleting doesn't undo moderation
+    return { deletedGames: hosted.rows.map((r) => r.id) };
+  });
+}
+
 async function countGames() {
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM games');
   return rows[0].n;
@@ -289,6 +384,8 @@ module.exports = {
   updateGameDetails, removePlayerByHost, wasRemovedFrom, listAllGamesWithReports, setStatus,
   addPlayerIfSpace, removePlayer, hasReported, addReport, listReports,
   banUserAndRemoveGames, isBanned, countGames,
-  ensureUser, setDisplayName, listPlayersWithNames,
+  ensureUser, setDisplayName, recordConsent, listPlayersWithNames,
   listComments, addComment, getComment, deleteComment,
+  getCommentInGame, addCommentReport, listReportedComments, listReportedGames, findComment,
+  dismissGameReports, dismissCommentReports, unbanUser, listBanned, deleteUserData,
 };

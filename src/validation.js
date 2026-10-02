@@ -96,4 +96,21 @@ function validateGameEdit(body, game) {
   return { errors: [], value: result.value, changed };
 }
 
-module.exports = { validateGame, validateGameEdit, validateName, fallbackName };
+// Age on a given day, in Wollongong, from a YYYY-MM-DD date of birth.
+// Returns null if the date isn't a real date.
+function ageOn(dateOfBirth, today = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateOfBirth || ''));
+  if (!match) return null;
+  const [y, m, d] = match.slice(1).map(Number);
+  const check = new Date(Date.UTC(y, m - 1, d));
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) return null; // e.g. 31 Feb
+
+  const [ty, tm, td] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(today).split('-').map(Number);
+  let age = ty - y;
+  if (tm < m || (tm === m && td < d)) age -= 1; // birthday not reached yet this year
+  return age;
+}
+
+module.exports = { validateGame, validateGameEdit, validateName, fallbackName, ageOn };

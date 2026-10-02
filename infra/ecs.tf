@@ -51,11 +51,25 @@ resource "aws_iam_role_policy" "execution_secrets" {
   policy = data.aws_iam_policy_document.read_secrets.json
 }
 
-# The *task role* is what the app itself could use to call AWS. It needs
-# nothing yet, so it gets no permissions (least privilege).
+# The *task role* is what the app itself uses to call AWS. Its only
+# permission: deleting a person's sign-in when they delete their account,
+# in this one user pool (least privilege).
 resource "aws_iam_role" "task" {
   name               = "${var.project}-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+}
+
+data "aws_iam_policy_document" "task" {
+  statement {
+    actions   = ["cognito-idp:AdminDeleteUser"]
+    resources = [aws_cognito_user_pool.main.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "task" {
+  name   = "delete-own-cognito-users"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.task.json
 }
 
 # --- Task definition -----------------------------------------------------------

@@ -5,7 +5,7 @@ async function joinedGame(page, request, name = 'Chatty') {
   const me = await signInAs(page, name);
   const host = newUser('host');
   const game = await createGame(request, host, { title: uniqueTitle('Chat game') });
-  await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id, 'x-user-name': name } });
+  await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes', 'x-user-name': name } });
   return { me, host, game };
 }
 
@@ -27,7 +27,7 @@ test.describe('Comments', () => {
 
   test("the host's comments are labelled", async ({ page, request }) => {
     const { host, game } = await joinedGame(page, request);
-    await request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': host }, data: { body: 'Bring water' } });
+    await request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': host, 'x-dev-consent': 'yes' }, data: { body: 'Bring water' } });
 
     await page.goto(`/#/game/${game.id}`);
     const comment = page.getByTestId('comments').getByRole('listitem').filter({ hasText: 'Bring water' });
@@ -37,7 +37,7 @@ test.describe('Comments', () => {
 
   test('I can delete my own comment', async ({ page, request }) => {
     const { me, game } = await joinedGame(page, request);
-    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id }, data: { body: 'Wrong game, sorry' } });
+    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' }, data: { body: 'Wrong game, sorry' } });
 
     await page.goto(`/#/game/${game.id}`);
     page.once('dialog', (d) => d.accept()); // "Delete this comment?"
@@ -49,7 +49,7 @@ test.describe('Comments', () => {
   test('comments are shown as text, never run as code', async ({ page, request }) => {
     const { me, game } = await joinedGame(page, request);
     const evil = '<img src=x onerror="window.hacked=1">';
-    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id }, data: { body: evil } });
+    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id, 'x-dev-consent': 'yes' }, data: { body: evil } });
 
     await page.goto(`/#/game/${game.id}`);
     await expect(page.getByTestId('comments')).toContainText(evil);
@@ -60,7 +60,7 @@ test.describe('Comments', () => {
     await signInAs(page, 'Nosy');
     const host = newUser('host');
     const game = await createGame(request, host, { title: uniqueTitle('Private chat') });
-    await request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': host }, data: { body: 'Secret plans' } });
+    await request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': host, 'x-dev-consent': 'yes' }, data: { body: 'Secret plans' } });
 
     await page.goto(`/#/game/${game.id}`);
     await expect(page.getByTestId('comments-locked')).toBeVisible();

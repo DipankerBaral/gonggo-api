@@ -26,7 +26,11 @@
   };
 
   const app = document.getElementById('app');
-  const state = { sport: '', hasSpots: false };
+  const state = { sport: '', hasSpots: false, when: '' };
+  const Art = window.GongGoArt;
+
+  // Computers get the list and the map side by side; phones get one at a time
+  const wide = window.matchMedia('(min-width: 64rem)');
   let activeMaps = [];
 
   // Every page change gets a number. Pages load data from the API, and if the
@@ -108,6 +112,7 @@
     document.getElementById('account').hidden = !profile;
     document.getElementById('sign-in-button').hidden = !!profile;
     if (profile) document.getElementById('account-name').textContent = profile.name || 'Account';
+    document.getElementById('menu-admin').hidden = !(profile && profile.isAdmin);
     closeAccountMenu();
   }
 
@@ -130,11 +135,11 @@
     accountMenu().querySelector('a, button').focus();
   }
 
-  function signOutNow() {
+  function signOutNow({ message = 'Signed out.' } = {}) {
     Auth.signOut(); // in real sign-in this also ends the session on Cognito's side
     profile = null;
     renderTopbar();
-    toast('Signed out.');
+    toast(message);
     location.hash = '#/';
   }
 
@@ -185,6 +190,28 @@
     });
   }
 
+  function askReason({ title, text = '', label = "What's wrong with it?", submit = 'Send report' }) {
+    document.getElementById('reason-title').textContent = title;
+    document.getElementById('reason-text').textContent = text;
+    document.getElementById('reason-label').textContent = label;
+    document.getElementById('reason-submit').textContent = submit;
+    const form = document.getElementById('reason-form');
+    const input = document.getElementById('reason-input');
+    const error = document.getElementById('reason-error');
+    input.value = '';
+    error.hidden = true;
+
+    return openDialog('reason-dialog', 'reason-cancel', (done) => {
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        if (input.value.trim().length < 3) { error.hidden = false; input.focus(); return; }
+        form.onsubmit = null;
+        done(input.value.trim());
+      };
+      setTimeout(() => input.focus());
+    });
+  }
+
   // The sign-in dialog. Real mode sends you to Cognito (the page navigates away
   // and comes back signed in); dev mode signs you in with just a first name.
   function showSignIn(title) {
@@ -230,12 +257,73 @@
     });
   }
 
-  // Resolves with the signed-in profile (with a name), or null if they backed out
+  // First time only: a name, confirming they're 18+, and accepting the terms.
+  // Resolves with the profile, or null if they backed out (or are under 18).
+  function askWelcome() {
+    const form = document.getElementById('welcome-form');
+    const name = document.getElementById('welcome-name');
+    const dob = document.getElementById('welcome-dob');
+    const terms = document.getElementById('welcome-terms');
+    const fields = document.getElementById('welcome-fields');
+    const underAge = document.getElementById('welcome-under-age');
+    const submit = document.getElementById('welcome-submit');
+    const cancel = document.getElementById('welcome-cancel');
+    const show = (id, on) => { document.getElementById(id).hidden = !on; };
+
+    name.value = (profile && profile.name) || '';
+    dob.value = '';
+    dob.max = new Date().toISOString().slice(0, 10);
+    terms.checked = false;
+    fields.hidden = false;
+    underAge.hidden = true;
+    submit.hidden = false;
+    cancel.textContent = 'Not now';
+    ['welcome-name-error', 'welcome-dob-error', 'welcome-terms-error'].forEach((id) => show(id, false));
+
+    return openDialog('welcome-dialog', 'welcome-cancel', (done) => {
+      cancel.onclick = () => { if (!underAge.hidden) signOutNow(); }; // after "under 18", the button signs out
+      form.onsubmit = async (event) => {
+        event.preventDefault();
+        const problems = { 'welcome-name-error': !validName(name.value), 'welcome-dob-error': !dob.value, 'welcome-terms-error': !terms.checked };
+        Object.entries(problems).forEach(([id, bad]) => show(id, bad));
+        name.toggleAttribute('aria-invalid', problems['welcome-name-error']);
+        if (Object.values(problems).some(Boolean)) {
+          (problems['welcome-name-error'] ? name : problems['welcome-dob-error'] ? dob : terms).focus(); // first problem
+          return;
+        }
+
+        if (name.value.trim() !== (profile.name || '')) {
+          const named = await api('/me', { method: 'PATCH', body: { name: name.value } });
+          if (!named.ok) { toast(errorText(named.data)); return; }
+          profile = { ...profile, ...named.data };
+        }
+        const res = await api('/me/consent', { method: 'POST', body: { dateOfBirth: dob.value, acceptTerms: true } });
+        if (res.status === 403 && res.data.code === 'under_age') {
+          fields.hidden = true;
+          underAge.hidden = false;
+          submit.hidden = true;
+          cancel.textContent = 'Sign out';
+          cancel.focus();
+          return;
+        }
+        if (!res.ok) { toast(errorText(res.data)); return; }
+        profile = { ...profile, ...res.data };
+        form.onsubmit = null;
+        cancel.onclick = null;
+        renderTopbar();
+        done(profile);
+      };
+      setTimeout(() => (name.value ? dob : name).focus());
+    });
+  }
+
+  // Resolves with a signed-in, set-up profile, or null if they backed out
   async function requireSignIn(title = 'Sign in to GongGo') {
     if (!profile) await showSignIn(title);
     if (!profile) return null;
-    if (!profile.name) await askName();
-    return profile && profile.name ? profile : null;
+    if (!profile.consented) await askWelcome();
+    else if (!profile.name) await askName();
+    return profile && profile.name && profile.consented ? profile : null;
   }
 
   // ---------------------------------------------------------------- the API
@@ -281,8 +369,14 @@
       <span class="visually-hidden">${taken} of ${cap} spots taken</span></div>`;
   }
 
+  // Stop any zoom or pan first: removing a map mid-animation makes Leaflet
+  // throw ("reading '_leaflet_pos'") when its next animation frame runs
   function destroyMaps() {
-    activeMaps.forEach((map) => map.remove());
+    activeMaps.forEach((map) => {
+      map.stop();
+      map.off();
+      map.remove();
+    });
     activeMaps = [];
   }
 
@@ -313,20 +407,48 @@
     });
   }
 
+  const WHEN = [['', 'Any time'], ['today', 'Today'], ['weekend', 'Weekend'], ['week', 'This week']];
+
   function filtersHtml() {
-    const chips = [['', 'All sports'], ...Object.entries(SPORTS)]
-      .map(([value, label]) =>
-        `<button type="button" class="chip" data-sport="${value}" aria-pressed="${state.sport === value}">${label}</button>`)
+    const when = WHEN.map(([value, label]) =>
+      `<button type="button" class="segment" data-when="${value}" aria-pressed="${state.when === value}">${label}</button>`).join('');
+    const sports = [['', 'All sports'], ...Object.entries(SPORTS)]
+      .map(([value, label]) => `<button type="button" class="chip" data-sport="${value}" aria-pressed="${state.sport === value}">${
+        value ? Art.icon(value, 'chip-icon') : ''}${label}</button>`)
       .join('');
     const spots = `<button type="button" class="chip" data-has-spots aria-pressed="${state.hasSpots}">Has spots</button>`;
-    return `<div class="filters" role="toolbar" aria-label="Filter games">${spots}${chips}</div>`;
+    return `<div class="when" role="toolbar" aria-label="When">${when}</div>
+      <div class="filters" role="toolbar" aria-label="Filter games">${spots}${sports}</div>`;
   }
 
   function bindFilters(rerender) {
     app.querySelectorAll('[data-sport]').forEach((chip) =>
       chip.addEventListener('click', () => { state.sport = chip.dataset.sport; rerender(); }));
+    app.querySelectorAll('[data-when]').forEach((b) =>
+      b.addEventListener('click', () => { state.when = b.dataset.when; rerender(); }));
     const spots = app.querySelector('[data-has-spots]');
     if (spots) spots.addEventListener('click', () => { state.hasSpots = !state.hasSpots; rerender(); });
+  }
+
+  // Wollongong dates (YYYY-MM-DD) of the coming weekend, or this one if it's Sat/Sun
+  function weekendKeys() {
+    const keys = [];
+    for (let i = 0; i < 7 && keys.length < 2; i++) {
+      const d = new Date(Date.now() + i * 864e5);
+      const day = fmt({ weekday: 'short' }).format(d);
+      if (day === 'Sat' || day === 'Sun') keys.push(dayKey(d));
+      else if (keys.length) break;
+    }
+    return keys;
+  }
+
+  function matchesWhen(game) {
+    const start = new Date(game.startsAt);
+    if (!state.when) return true;
+    if (state.when === 'today') return dayKey(start) === dayKey(new Date()) || isOnNow(game);
+    if (state.when === 'weekend') return weekendKeys().includes(dayKey(start)) || (isOnNow(game) && weekendKeys().includes(dayKey(new Date())));
+    if (state.when === 'week') return start < new Date(Date.now() + 7 * 864e5);
+    return true;
   }
 
   // One game in a list. My games also shows the date and a status tag.
@@ -335,10 +457,10 @@
     const { time, period } = timeParts(start);
     const live = game.status === 'open' && new Date(game.endsAt) > new Date();
     const onNow = live && isOnNow(game) ? '<span class="status-tag on-now">On now</span>' : '';
-    return `<li><a class="game" href="#/game/${esc(game.id)}" data-testid="game-row">
+    return `<li><a class="game" href="#/game/${esc(game.id)}" data-testid="game-row" data-game-id="${esc(game.id)}">
       <div class="game-time">${time}<small>${period}</small></div>
       <div>
-        <div class="game-sport">${esc(SPORTS[game.sport] || game.sport)}</div>
+        <div class="game-sport">${Art.icon(game.sport, 'sport-icon')}${esc(SPORTS[game.sport] || game.sport)}</div>
         <h3 class="game-title">${esc(game.title)}</h3>
         ${withDate ? `<div class="game-date">${esc(dayLabel(start))}</div>` : ''}
         <div class="game-place">${esc(game.location.name)}</div>
@@ -357,41 +479,121 @@
 
   // ---------------------------------------------------------------- views
 
+  function heroHtml() {
+    return `<section class="hero" aria-labelledby="hero-title">
+      <div class="hero-text">
+        <h1 id="hero-title" tabindex="-1">Find a game around the Gong</h1>
+        <p id="hero-count">Pickup games and community sport from Helensburgh to Kiama.</p>
+      </div>
+      ${Art.COAST}
+    </section>`;
+  }
+
+  // Games grouped for the list: what's on right now first, then day by day
+  function groupGames(games) {
+    const groups = [];
+    const now = games.filter(isOnNow);
+    if (now.length) groups.push({ label: 'Happening now', games: now, live: true });
+    for (const game of games.filter((g) => !isOnNow(g))) {
+      const date = new Date(game.startsAt);
+      const key = dayKey(date);
+      const last = groups[groups.length - 1];
+      if (!last || last.key !== key) groups.push({ key, label: dayLabel(date), games: [game] });
+      else last.games.push(game);
+    }
+    return groups;
+  }
+
   async function listView() {
     document.title = 'GongGo: pickup games around Wollongong';
     const seq = routeSeq;
-    const res = await loadGames();
-    if (isStale(seq)) return;
-
-    if (!res.ok) {
-      app.innerHTML = `${filtersHtml()}<div class="errors" role="alert">${esc(errorText(res.data))}</div>`;
-      return bindFilters(listView);
-    }
-
-    const games = res.data;
-    let body;
-    if (!games.length) {
-      body = `<div class="empty">
-        <h2>No games coming up</h2>
-        <p>${state.sport || state.hasSpots ? 'Nothing matches these filters yet.' : 'Be the first to get people playing.'}</p>
-        <a class="button" href="#/new">Post a game</a>
+    app.classList.add('list-layout');
+    app.innerHTML = `${heroHtml()}
+      <div class="split">
+        <section class="list-pane" aria-label="Games">
+          <div id="list-filters"></div>
+          <div id="list-body" aria-live="polite"><p class="muted">Loading games...</p></div>
+        </section>
+        <aside class="map-pane" aria-label="Map of these games"><div id="side-map" class="side-map"></div></aside>
       </div>`;
-    } else {
-      // Group by day, in Wollongong time
-      const groups = [];
-      for (const game of games) {
-        const date = new Date(game.startsAt);
-        const key = dayKey(date);
-        if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, date, games: [] });
-        groups[groups.length - 1].games.push(game);
-      }
-      body = groups.map((group) => `
-        <h2 class="day">${dayLabel(group.date)}</h2>
-        <ul class="games">${group.games.map((game) => gameRowHtml(game)).join('')}</ul>`).join('');
+
+    // On computers, a map that follows the list
+    let sideMap = null;
+    let markerLayer = null;
+    const markers = new Map();
+    if (wide.matches) {
+      sideMap = makeMap(document.getElementById('side-map')).setView(WOLLONGONG, 12);
+      markerLayer = L.layerGroup().addTo(sideMap);
     }
 
-    app.innerHTML = `<h1 class="visually-hidden">Upcoming games</h1>${filtersHtml()}${body}`;
-    bindFilters(listView);
+    let updateSeq = 0;
+    async function update() {
+      const mine = ++updateSeq;
+      document.getElementById('list-filters').innerHTML = filtersHtml();
+      bindFilters(update);
+
+      const res = await loadGames();
+      if (isStale(seq) || mine !== updateSeq) return; // a newer filter click (or page) took over
+      const body = document.getElementById('list-body');
+      if (!res.ok) {
+        body.innerHTML = `<div class="errors" role="alert">${esc(errorText(res.data))}</div>`;
+        return;
+      }
+
+      const games = res.data.filter(matchesWhen);
+      const thisWeek = res.data.filter((g) => new Date(g.startsAt) < new Date(Date.now() + 7 * 864e5)).length;
+      const sportName = state.sport ? `${(SPORTS[state.sport] || '').toLowerCase()} ` : '';
+      document.getElementById('hero-count').textContent = thisWeek
+        ? `${thisWeek} ${sportName}game${thisWeek === 1 ? '' : 's'} in the next 7 days, from Helensburgh to Kiama.`
+        : 'Pickup games and community sport from Helensburgh to Kiama.';
+
+      if (!games.length) {
+        const filtered = state.sport || state.hasSpots || state.when;
+        body.innerHTML = `<div class="empty">
+          <h2>${filtered ? 'Nothing matches yet' : 'No games coming up'}</h2>
+          <p>${filtered ? 'Try another sport or time, or post the game you want to play.' : 'Be the first to get people playing.'}</p>
+          <a class="button" href="#/new">Post a game</a>
+        </div>`;
+      } else {
+        body.innerHTML = groupGames(games).map((group) => `
+          <h2 class="day${group.live ? ' day-live' : ''}">${group.live ? '<span class="live-dot" aria-hidden="true"></span>' : ''}${esc(group.label)}</h2>
+          <ul class="games">${group.games.map((game) => gameRowHtml(game)).join('')}</ul>`).join('');
+      }
+
+      if (sideMap) {
+        markerLayer.clearLayers();
+        markers.clear();
+        for (const game of games) {
+          const { time, period } = timeParts(new Date(game.startsAt));
+          const marker = L.marker([game.location.lat, game.location.lng], { icon: pinIcon(game), title: game.title, alt: game.title })
+            .bindPopup(`<p class="popup-title">${esc(game.title)}</p>
+              <div>${esc(dayLabel(new Date(game.startsAt)))}, ${time}${period}</div>
+              <div>${esc(game.location.name)}</div>
+              <p><a href="#/game/${esc(game.id)}">View game</a></p>`)
+            .addTo(markerLayer);
+          markers.set(game.id, marker);
+        }
+        // Jump straight there (no animation): the person may click a game at any moment
+        if (games.length) sideMap.fitBounds(L.featureGroup([...markers.values()]).getBounds().pad(0.25), { maxZoom: 14, animate: false });
+
+        // Pointing at a game lifts its pin on the map
+        body.querySelectorAll('[data-game-id]').forEach((row) => {
+          const marker = markers.get(row.dataset.gameId);
+          if (!marker) return;
+          const set = (on) => {
+            const el = marker.getElement();
+            if (el) el.classList.toggle('pin-active', on);
+            marker.setZIndexOffset(on ? 1000 : 0);
+          };
+          row.addEventListener('mouseenter', () => set(true));
+          row.addEventListener('mouseleave', () => set(false));
+          row.addEventListener('focus', () => set(true));
+          row.addEventListener('blur', () => set(false));
+        });
+      }
+    }
+
+    await update();
   }
 
   async function mapView() {
@@ -414,7 +616,7 @@
           <p><a href="#/game/${esc(game.id)}">View game</a></p>`)
         .addTo(map);
     });
-    if (markers.length) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2), { maxZoom: 14 });
+    if (markers.length) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2), { maxZoom: 14, animate: false });
   }
 
   async function detailView(id, { justJoined = false } = {}) {
@@ -451,7 +653,7 @@
 
     app.innerHTML = `<article class="detail">
       <a class="back" href="#/">All games</a>
-      <div class="detail-sport">${esc(SPORTS[game.sport] || game.sport)}</div>
+      <div class="detail-sport">${Art.icon(game.sport, 'sport-icon')}${esc(SPORTS[game.sport] || game.sport)}</div>
       <h1 tabindex="-1">${esc(game.title)}</h1>
       ${onNow && !cancelled ? '<p class="on-now-banner"><span class="status-tag on-now">On now</span> Running late? You can still join.</p>' : ''}
       <dl class="facts">
@@ -570,6 +772,7 @@
             ${c.isHost ? '<span class="tag">host</span>' : ''}
             <time datetime="${esc(c.createdAt)}">${esc(ago(c.createdAt))}</time>
             ${c.canDelete ? `<button type="button" class="link-button" data-delete="${esc(c.id)}">Delete</button>` : ''}
+            ${c.userId !== profile.id ? `<button type="button" class="link-button comment-report" data-report="${esc(c.id)}" aria-label="Report comment by ${esc(c.authorName)}">Report</button>` : ''}
           </div>
           <p class="comment-body">${esc(c.body)}</p>
         </li>`).join('')}</ol>`
@@ -591,6 +794,13 @@
       toast('Comment posted.');
       loadComments(game, routeSeq);
     });
+
+    body.querySelectorAll('[data-report]').forEach((b) => b.addEventListener('click', async () => {
+      const reason = await askReason({ title: 'Report this comment', text: 'The GongGo admins will take a look. The person who wrote it is not told who reported it.' });
+      if (!reason) return;
+      const r = await api(`/games/${game.id}/comments/${b.dataset.report}/report`, { method: 'POST', body: { reason } });
+      toast(r.ok ? 'Report sent. Thanks for keeping GongGo friendly.' : errorText(r.data));
+    }));
 
     body.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
       if (!window.confirm('Delete this comment?')) return;
@@ -624,6 +834,117 @@
     }
   }
 
+  async function deleteAccount() {
+    const form = document.getElementById('delete-form');
+    const input = document.getElementById('delete-confirm');
+    const submit = document.getElementById('delete-submit');
+    input.value = '';
+    submit.disabled = true;
+    input.oninput = () => { submit.disabled = input.value.trim().toLowerCase() !== 'delete'; };
+
+    const confirmed = await openDialog('delete-dialog', 'delete-cancel', (done) => {
+      form.onsubmit = (event) => { event.preventDefault(); if (!submit.disabled) done(true); };
+      setTimeout(() => input.focus());
+    });
+    if (!confirmed) return;
+
+    const res = await api('/me', { method: 'DELETE' });
+    if (!res.ok) return toast(errorText(res.data));
+    signOutNow({ message: 'Your account was deleted.' });
+  }
+
+  // ---- admin page
+
+  async function adminView() {
+    document.title = 'Admin: GongGo';
+    if (!profile || !profile.isAdmin) {
+      app.innerHTML = `<div class="empty"><h1 tabindex="-1">Admins only</h1>
+        <p>This page is for GongGo moderators.</p><a class="button" href="#/">Back to games</a></div>`;
+      return;
+    }
+
+    const seq = routeSeq;
+    const [reported, banned] = await Promise.all([api('/admin/reported'), api('/admin/banned')]);
+    if (isStale(seq)) return;
+    if (!reported.ok || !banned.ok) {
+      app.innerHTML = `<h1 tabindex="-1">Admin</h1><div class="errors" role="alert">${esc(errorText((reported.ok ? banned : reported).data))}</div>`;
+      return;
+    }
+
+    const reasons = (reports) => `<ul class="admin-reasons">${reports.map((r) =>
+      `<li>${esc(r.reason)} <span class="tag">${esc(ago(r.createdAt))}</span></li>`).join('')}</ul>`;
+    const count = (n) => `${n} report${n === 1 ? '' : 's'}`;
+    const { games, comments } = reported.data;
+
+    app.innerHTML = `<div class="admin">
+      <h1 tabindex="-1">Admin</h1>
+      <p class="muted">Reports from players. Remove what breaks the rules; dismiss false alarms.</p>
+
+      <h2>Reported comments (${comments.length})</h2>
+      ${comments.length ? `<ul class="admin-list" data-testid="reported-comments">${comments.map((c) => `<li class="admin-item">
+        <div class="admin-meta">${esc(c.authorName)} in <a href="#/game/${esc(c.gameId)}">${esc(c.gameTitle)}</a>, ${count(c.reports.length)}</div>
+        <blockquote>${esc(c.body)}</blockquote>
+        ${reasons(c.reports)}
+        <div class="admin-actions">
+          <button type="button" class="button danger" data-delete-comment="${esc(c.id)}">Delete comment</button>
+          <button type="button" class="button quiet" data-dismiss-comment="${esc(c.id)}">Dismiss</button>
+          <button type="button" class="button quiet" data-ban="${esc(c.authorId)}" data-name="${esc(c.authorName)}">Ban ${esc(c.authorName)}</button>
+        </div></li>`).join('')}</ul>` : '<p class="muted">Nothing reported.</p>'}
+
+      <h2>Reported games (${games.length})</h2>
+      ${games.length ? `<ul class="admin-list" data-testid="reported-games">${games.map((g) => `<li class="admin-item">
+        <h3><a href="#/game/${esc(g.id)}">${esc(g.title)}</a></h3>
+        <div class="admin-meta">Hosted by ${esc(g.hostName)}, ${count(g.reports.length)}${g.status === 'cancelled' ? ', cancelled' : ''}</div>
+        ${reasons(g.reports)}
+        <div class="admin-actions">
+          <button type="button" class="button danger" data-remove-game="${esc(g.id)}">Remove game</button>
+          <button type="button" class="button quiet" data-dismiss-game="${esc(g.id)}">Dismiss</button>
+          <button type="button" class="button quiet" data-ban="${esc(g.hostId)}" data-name="${esc(g.hostName)}">Ban ${esc(g.hostName)}</button>
+        </div></li>`).join('')}</ul>` : '<p class="muted">Nothing reported.</p>'}
+
+      <h2>Banned (${banned.data.length})</h2>
+      ${banned.data.length ? `<ul class="admin-list" data-testid="banned">${banned.data.map((b) => `<li class="admin-item">
+        <strong>${esc(b.name)}</strong> <span class="tag">since ${esc(ago(b.bannedAt))}</span>
+        <div class="admin-actions"><button type="button" class="button quiet" data-unban="${esc(b.userId)}" data-name="${esc(b.name)}">Unban</button></div>
+      </li>`).join('')}</ul>` : '<p class="muted">Nobody is banned.</p>'}
+    </div>`;
+
+    const act = async (request, message) => {
+      const res = await request;
+      toast(res.ok ? message : errorText(res.data));
+      if (!isStale(seq)) adminView();
+    };
+    const on = (attr, handler) => app.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener('click', () => handler(b)));
+
+    on('data-delete-comment', (b) => {
+      if (window.confirm('Delete this comment for everyone?')) act(api(`/admin/comments/${b.dataset.deleteComment}`, { method: 'DELETE' }), 'Comment deleted.');
+    });
+    on('data-dismiss-comment', (b) => act(api(`/admin/comments/${b.dataset.dismissComment}/reports/dismiss`, { method: 'POST' }), 'Reports dismissed.'));
+    on('data-dismiss-game', (b) => act(api(`/admin/games/${b.dataset.dismissGame}/reports/dismiss`, { method: 'POST' }), 'Reports dismissed.'));
+    on('data-remove-game', async (b) => {
+      const reason = await askReason({ title: 'Remove this game', text: 'It disappears for everyone.', label: 'Reason (kept for your records)', submit: 'Remove game' });
+      if (reason) act(api(`/admin/games/${b.dataset.removeGame}/remove`, { method: 'POST', body: { reason } }), 'Game removed.');
+    });
+    on('data-ban', (b) => {
+      if (window.confirm(`Ban ${b.dataset.name}? They won't be able to post, join or comment, and their upcoming games will be removed.`)) {
+        act(api(`/admin/users/${encodeURIComponent(b.dataset.ban)}/ban`, { method: 'POST' }), `${b.dataset.name} was banned.`);
+      }
+    });
+    on('data-unban', (b) => act(api(`/admin/users/${encodeURIComponent(b.dataset.unban)}/unban`, { method: 'POST' }), `${b.dataset.name} was unbanned.`));
+  }
+
+  // Signed in, but hasn't confirmed their age and accepted the terms yet
+  function finishSetupCard() {
+    app.innerHTML = `<div class="prompt-card">
+      <h1 tabindex="-1">Finish setting up your account</h1>
+      <p>Confirm you're 18 or older and accept the terms, and you're ready to play.</p>
+      <button type="button" class="button" id="finish-setup">Finish setting up</button>
+    </div>`;
+    document.getElementById('finish-setup').addEventListener('click', async () => {
+      if (await askWelcome()) route();
+    });
+  }
+
   // A friendly card for pages that need an account
   function signInCard(heading, text, title) {
     app.innerHTML = `<div class="prompt-card">
@@ -642,6 +963,7 @@
       return signInCard('Sign in to see your games',
         "Games you're hosting or have joined show up here.", 'Sign in to see your games');
     }
+    if (!profile.consented) return finishSetupCard();
 
     const seq = routeSeq;
     const res = await api('/me/games');
@@ -669,7 +991,14 @@
       <h2 class="day">Coming up</h2>
       ${upcoming.length ? list(upcoming, false) : '<p class="muted">Nothing coming up. <a href="#/">Find a game</a></p>'}
       <h2 class="day">Last ${historyDays} days</h2>
-      ${past.length ? list(past, true) : `<p class="muted">No games in the last ${historyDays} days.</p>`}`;
+      ${past.length ? list(past, true) : `<p class="muted">No games in the last ${historyDays} days.</p>`}
+      <section class="danger-zone" aria-labelledby="danger-title">
+        <h2 id="danger-title">Delete account</h2>
+        <p>Removes your account and everything in it from GongGo.</p>
+        <button type="button" class="button danger" id="delete-account">Delete my account</button>
+      </section>`;
+
+    document.getElementById('delete-account').addEventListener('click', deleteAccount);
 
     document.getElementById('rename').addEventListener('click', async () => {
       if (await askName({ current: profile.name || '' })) {
@@ -678,7 +1007,7 @@
         meView();
       }
     });
-    document.getElementById('sign-out').addEventListener('click', signOutNow);
+    document.getElementById('sign-out').addEventListener('click', () => signOutNow());
   }
 
   const DURATIONS = [[30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], [90, '1½ hours'],
@@ -698,6 +1027,7 @@
       return signInCard('Sign in to post a game',
         'Hosting is free. Sign in so players know who is running the game.', 'Sign in to post a game');
     }
+    if (!profile.consented) return finishSetupCard();
 
     let game = null;
     if (editing) {
@@ -828,11 +1158,11 @@
     routeSeq += 1;
     const seq = routeSeq;
     destroyMaps();
-    app.classList.remove('full-bleed');
+    app.classList.remove('full-bleed', 'list-layout');
     document.body.classList.remove('on-detail', 'on-form');
 
     const hash = location.hash.replace(/^#/, '') || '/';
-    const view = hash === '/' ? 'list' : hash === '/map' ? 'map' : hash === '/me' ? 'me' : '';
+    const view = { '/': 'list', '/map': 'map', '/me': 'me', '/admin': 'admin' }[hash] || '';
     document.querySelectorAll('[data-view]').forEach((a) => {
       if (a.dataset.view === view) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -853,6 +1183,8 @@
       await mapView();
     } else if (hash === '/me') {
       await meView();
+    } else if (hash === '/admin') {
+      await adminView();
     } else {
       await listView();
     }
@@ -883,8 +1215,8 @@
   document.addEventListener('click', (event) => {
     if (!document.getElementById('account').contains(event.target)) closeAccountMenu();
   });
-  accountMenu().querySelector('a').addEventListener('click', () => closeAccountMenu());
-  document.getElementById('menu-sign-out').addEventListener('click', signOutNow);
+  accountMenu().querySelectorAll('a').forEach((a) => a.addEventListener('click', () => closeAccountMenu()));
+  document.getElementById('menu-sign-out').addEventListener('click', () => signOutNow());
   document.getElementById('menu-rename').addEventListener('click', async () => {
     closeAccountMenu();
     if (await askName({ current: (profile && profile.name) || '' })) {
@@ -895,6 +1227,7 @@
   });
 
   window.addEventListener('hashchange', route);
+  wide.addEventListener('change', () => { if ((location.hash || '#/') === '#/') route(); });
 
   (async function start() {
     const result = await Auth.init(); // finishes a Cognito sign-in if we just came back from one
@@ -902,8 +1235,9 @@
     renderTopbar();
     if (result && result.error) toast(result.error);
     if (result && result.signedIn && profile) {
-      if (!profile.name) await askName();
-      toast("You're signed in.");
+      if (!profile.consented) await askWelcome();
+      else if (!profile.name) await askName();
+      if (profile && profile.consented) toast("You're signed in.");
     }
     route();
   })();

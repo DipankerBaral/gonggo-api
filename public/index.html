@@ -29,6 +29,7 @@
       </button>
       <div class="account-menu" id="account-menu" hidden>
         <a href="#/me" data-view="me">My games</a>
+        <a href="#/admin" data-view="admin" id="menu-admin" hidden>Admin</a>
         <button type="button" id="menu-rename">Change name</button>
         <button type="button" id="menu-sign-out">Sign out</button>
       </div>
@@ -37,6 +38,11 @@
   </header>
 
   <main id="app" tabindex="-1"></main>
+
+  <footer class="site-footer">
+    <a href="/terms.html">Terms of Use</a>
+    <a href="/privacy.html">Privacy Policy</a>
+  </footer>
 
   <a href="#/new" class="post-button" id="post-button">Post a game</a>
 
@@ -49,6 +55,41 @@
     <div class="dialog-actions">
       <button type="button" class="button quiet" id="signin-cancel">Not now</button>
     </div>
+  </dialog>
+
+  <dialog id="welcome-dialog" aria-labelledby="welcome-title">
+    <form id="welcome-form" novalidate>
+      <h2 id="welcome-title">Welcome to GongGo</h2>
+      <p>Two quick things before you start.</p>
+
+      <div id="welcome-fields">
+        <label for="welcome-name">First name</label>
+        <input id="welcome-name" autocomplete="given-name" maxlength="30" aria-describedby="welcome-name-error">
+        <p id="welcome-name-error" class="field-error" hidden>Use letters, like Sam or Priya.</p>
+
+        <label for="welcome-dob" class="spaced">Date of birth</label>
+        <input id="welcome-dob" type="date" autocomplete="bday" aria-describedby="welcome-dob-hint welcome-dob-error">
+        <p id="welcome-dob-hint" class="field-hint">GongGo is for people 18 and over. We check this, then forget the date.</p>
+        <p id="welcome-dob-error" class="field-error" hidden>Enter your date of birth.</p>
+
+        <label class="check">
+          <input type="checkbox" id="welcome-terms" aria-describedby="welcome-terms-error">
+          <span>I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a>
+          and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a></span>
+        </label>
+        <p id="welcome-terms-error" class="field-error" hidden>Tick this to continue.</p>
+      </div>
+
+      <div id="welcome-under-age" class="errors" role="alert" hidden>
+        <p><strong>GongGo is for people aged 18 and over</strong>, so you can't use it yet.
+        You can sign out, or delete the account from My games.</p>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="button quiet" id="welcome-cancel">Not now</button>
+        <button type="submit" class="button" id="welcome-submit">Continue</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="name-dialog" aria-labelledby="name-title">
@@ -65,8 +106,42 @@
     </form>
   </dialog>
 
+  <dialog id="reason-dialog" aria-labelledby="reason-title">
+    <form method="dialog" id="reason-form">
+      <h2 id="reason-title">Report</h2>
+      <p id="reason-text"></p>
+      <label for="reason-input" id="reason-label">What's wrong with it?</label>
+      <textarea id="reason-input" maxlength="300" aria-describedby="reason-error"></textarea>
+      <p id="reason-error" class="field-error" hidden>Add a few words, so the admins know what to look for.</p>
+      <div class="dialog-actions">
+        <button type="button" class="button quiet" id="reason-cancel">Cancel</button>
+        <button type="submit" class="button" id="reason-submit">Send report</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-title">
+    <form method="dialog" id="delete-form">
+      <h2 id="delete-title">Delete your account?</h2>
+      <p>This can't be undone. GongGo will delete:</p>
+      <ul class="delete-list">
+        <li>games you're hosting, for everyone in them</li>
+        <li>your spot in games you've joined</li>
+        <li>your comments and reports</li>
+        <li>your sign-in and name</li>
+      </ul>
+      <label for="delete-confirm">Type <strong>delete</strong> to confirm</label>
+      <input id="delete-confirm" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="dialog-actions">
+        <button type="button" class="button quiet" id="delete-cancel">Keep my account</button>
+        <button type="submit" class="button danger-solid" id="delete-submit" disabled>Delete my account</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="/vendor/leaflet/leaflet.js"></script>
   <script src="/auth.js"></script>
+  <script src="/art.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

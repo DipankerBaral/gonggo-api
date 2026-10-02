@@ -57,6 +57,8 @@ async function identify(req) {
         id: claims.sub,
         email: claims.email || null,
         suggestedName: claims.given_name || (claims.name ? String(claims.name).split(' ')[0] : null),
+        groups: claims['cognito:groups'] || [], // Cognito puts group membership in the token
+        cognitoUsername: claims['cognito:username'] || claims.sub, // needed to delete the account
       };
     } catch {
       const err = new Error('Your sign-in has expired or is invalid. Sign in again.');
@@ -69,7 +71,12 @@ async function identify(req) {
   if (!id) return null;
   let name = req.get('x-user-name') || '';
   try { name = decodeURIComponent(name); } catch { /* keep as is */ }
-  return { id, email: null, suggestedName: name.trim() || null };
+  // Dev only: pretend to be in groups (e.g. "x-user-groups: admins") for local testing
+  const groups = (req.get('x-user-groups') || '').split(',').map((g) => g.trim()).filter(Boolean);
+  // Dev only: automated tests start as someone who has already confirmed they're
+  // 18+ and accepted the terms (the consent flow itself has its own tests)
+  const devConsent = req.get('x-dev-consent') === 'yes';
+  return { id, email: null, suggestedName: name.trim() || null, groups, cognitoUsername: null, devConsent };
 }
 
 // What the browser needs to start a sign-in (nothing secret in here)
