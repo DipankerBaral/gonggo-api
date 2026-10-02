@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { newUser, asUser, asAdmin, validGame, createGame } = require('./helpers');
+const { listAll, newUser, asUser, asAdmin, validGame, createGame } = require('./helpers');
 
 test.describe('Reporting', () => {
   test('a user can report a game once', async ({ request }) => {
@@ -41,7 +41,7 @@ test.describe('Admin', () => {
     expect(res.status()).toBe(200);
 
     expect((await request.get(`/games/${game.id}`)).status()).toBe(404);
-    const list = await (await request.get('/games')).json();
+    const list = await listAll(request);
     expect(list.map((g) => g.id)).not.toContain(game.id);
   });
 
@@ -56,7 +56,7 @@ test.describe('Admin', () => {
     const res = await request.post(`/admin/games/${game.id}/approve`, { headers: asAdmin() });
     expect((await res.json()).status).toBe('open');
 
-    const list = await (await request.get('/games')).json();
+    const list = await listAll(request);
     expect(list.map((g) => g.id)).toContain(game.id);
   });
 

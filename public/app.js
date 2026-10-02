@@ -26,7 +26,7 @@
   };
 
   const app = document.getElementById('app');
-  const state = { sport: '', hasSpots: false, when: '' };
+  const state = { sport: '', hasSpots: false, when: '', q: '' };
   const Art = window.GongGoArt;
 
   // Computers get the list and the map side by side; phones get one at a time
@@ -417,7 +417,12 @@
         value ? Art.icon(value, 'chip-icon') : ''}${label}</button>`)
       .join('');
     const spots = `<button type="button" class="chip" data-has-spots aria-pressed="${state.hasSpots}">Has spots</button>`;
-    return `<div class="when" role="toolbar" aria-label="When">${when}</div>
+    return `<div class="search">
+        <label for="game-search" class="visually-hidden">Search games</label>
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="game-search" type="search" placeholder="Search by game or place" value="${esc(state.q)}" autocomplete="off" enterkeyhint="search">
+      </div>
+      <div class="when" role="toolbar" aria-label="When">${when}</div>
       <div class="filters" role="toolbar" aria-label="Filter games">${spots}${sports}</div>`;
   }
 
@@ -428,27 +433,15 @@
       b.addEventListener('click', () => { state.when = b.dataset.when; rerender(); }));
     const spots = app.querySelector('[data-has-spots]');
     if (spots) spots.addEventListener('click', () => { state.hasSpots = !state.hasSpots; rerender(); });
-  }
-
-  // Wollongong dates (YYYY-MM-DD) of the coming weekend, or this one if it's Sat/Sun
-  function weekendKeys() {
-    const keys = [];
-    for (let i = 0; i < 7 && keys.length < 2; i++) {
-      const d = new Date(Date.now() + i * 864e5);
-      const day = fmt({ weekday: 'short' }).format(d);
-      if (day === 'Sat' || day === 'Sun') keys.push(dayKey(d));
-      else if (keys.length) break;
+    const search = app.querySelector('#game-search');
+    if (search) {
+      // Wait for a pause in typing, so we don't search on every keystroke
+      let timer;
+      search.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { state.q = search.value.trim(); rerender({ keepFilters: true }); }, 250);
+      });
     }
-    return keys;
-  }
-
-  function matchesWhen(game) {
-    const start = new Date(game.startsAt);
-    if (!state.when) return true;
-    if (state.when === 'today') return dayKey(start) === dayKey(new Date()) || isOnNow(game);
-    if (state.when === 'weekend') return weekendKeys().includes(dayKey(start)) || (isOnNow(game) && weekendKeys().includes(dayKey(new Date())));
-    if (state.when === 'week') return start < new Date(Date.now() + 7 * 864e5);
-    return true;
   }
 
   // One game in a list. My games also shows the date and a status tag.
@@ -470,11 +463,16 @@
     </a></li>`;
   }
 
-  async function loadGames() {
+  // One page of games from the server, with every filter applied there
+  async function loadGames({ cursor = null, limit = 20 } = {}) {
     const params = new URLSearchParams();
     if (state.sport) params.set('sport', state.sport);
     if (state.hasSpots) params.set('hasSpots', 'true');
-    return api(`/games${params.toString() ? `?${params}` : ''}`);
+    if (state.when) params.set('when', state.when);
+    if (state.q) params.set('q', state.q);
+    params.set('limit', String(limit));
+    if (cursor) params.set('cursor', cursor);
+    return api(`/games?${params}`);
   }
 
   // ---------------------------------------------------------------- views
@@ -527,43 +525,46 @@
     }
 
     let updateSeq = 0;
-    async function update() {
-      const mine = ++updateSeq;
-      document.getElementById('list-filters').innerHTML = filtersHtml();
-      bindFilters(update);
+    let shown = [];      // every game loaded so far, across pages
+    let nextCursor = null;
+    let total = 0;
 
-      const res = await loadGames();
-      if (isStale(seq) || mine !== updateSeq) return; // a newer filter click (or page) took over
+    function renderList() {
       const body = document.getElementById('list-body');
-      if (!res.ok) {
-        body.innerHTML = `<div class="errors" role="alert">${esc(errorText(res.data))}</div>`;
-        return;
-      }
-
-      const games = res.data.filter(matchesWhen);
-      const thisWeek = res.data.filter((g) => new Date(g.startsAt) < new Date(Date.now() + 7 * 864e5)).length;
-      const sportName = state.sport ? `${(SPORTS[state.sport] || '').toLowerCase()} ` : '';
-      document.getElementById('hero-count').textContent = thisWeek
-        ? `${thisWeek} ${sportName}game${thisWeek === 1 ? '' : 's'} in the next 7 days, from Helensburgh to Kiama.`
-        : 'Pickup games and community sport from Helensburgh to Kiama.';
-
-      if (!games.length) {
-        const filtered = state.sport || state.hasSpots || state.when;
+      if (!shown.length) {
+        const filtered = state.sport || state.hasSpots || state.when || state.q;
         body.innerHTML = `<div class="empty">
           <h2>${filtered ? 'Nothing matches yet' : 'No games coming up'}</h2>
-          <p>${filtered ? 'Try another sport or time, or post the game you want to play.' : 'Be the first to get people playing.'}</p>
+          <p>${filtered ? 'Try another search, sport or time, or post the game you want to play.' : 'Be the first to get people playing.'}</p>
           <a class="button" href="#/new">Post a game</a>
         </div>`;
-      } else {
-        body.innerHTML = groupGames(games).map((group) => `
+        return;
+      }
+      body.innerHTML = groupGames(shown).map((group) => `
           <h2 class="day${group.live ? ' day-live' : ''}">${group.live ? '<span class="live-dot" aria-hidden="true"></span>' : ''}${esc(group.label)}</h2>
-          <ul class="games">${group.games.map((game) => gameRowHtml(game)).join('')}</ul>`).join('');
+          <ul class="games">${group.games.map((game) => gameRowHtml(game)).join('')}</ul>`).join('')
+        + `<div class="more">
+          <p class="muted" data-testid="showing">Showing ${shown.length} of ${total} game${total === 1 ? '' : 's'}</p>
+          ${nextCursor ? '<button type="button" class="button quiet" id="show-more">Show more games</button>' : ''}
+        </div>`;
+
+      const more = document.getElementById('show-more');
+      if (more) {
+        more.addEventListener('click', async () => {
+          more.disabled = true;
+          more.textContent = 'Loading...';
+          const firstNew = shown.length;
+          await loadPage({ append: true });
+          // Keyboard and screen reader users carry on from the first new game
+          const rows = document.querySelectorAll('#list-body [data-testid="game-row"]');
+          if (rows[firstNew]) rows[firstNew].focus({ preventScroll: false });
+        });
       }
 
       if (sideMap) {
         markerLayer.clearLayers();
         markers.clear();
-        for (const game of games) {
+        for (const game of shown) {
           const { time, period } = timeParts(new Date(game.startsAt));
           const marker = L.marker([game.location.lat, game.location.lng], { icon: pinIcon(game), title: game.title, alt: game.title })
             .bindPopup(`<p class="popup-title">${esc(game.title)}</p>
@@ -574,7 +575,7 @@
           markers.set(game.id, marker);
         }
         // Jump straight there (no animation): the person may click a game at any moment
-        if (games.length) sideMap.fitBounds(L.featureGroup([...markers.values()]).getBounds().pad(0.25), { maxZoom: 14, animate: false });
+        if (shown.length) sideMap.fitBounds(L.featureGroup([...markers.values()]).getBounds().pad(0.25), { maxZoom: 14, animate: false });
 
         // Pointing at a game lifts its pin on the map
         body.querySelectorAll('[data-game-id]').forEach((row) => {
@@ -593,6 +594,36 @@
       }
     }
 
+    // Load the first page (append: false) or the next one (append: true)
+    async function loadPage({ append }) {
+      const mine = ++updateSeq;
+      const res = await loadGames({ cursor: append ? nextCursor : null });
+      if (isStale(seq) || mine !== updateSeq) return; // a newer filter (or page) took over
+      if (!res.ok) {
+        document.getElementById('list-body').innerHTML = `<div class="errors" role="alert">${esc(errorText(res.data))}</div>`;
+        return;
+      }
+      shown = append ? [...shown, ...res.data.games] : res.data.games;
+      nextCursor = res.data.nextCursor;
+      total = res.data.total;
+
+      const week = res.data.inNext7Days;
+      const sportName = state.sport ? `${(SPORTS[state.sport] || '').toLowerCase()} ` : '';
+      document.getElementById('hero-count').textContent = week
+        ? `${week} ${sportName}game${week === 1 ? '' : 's'} in the next 7 days, from Helensburgh to Kiama.`
+        : 'Pickup games and community sport from Helensburgh to Kiama.';
+      renderList();
+    }
+
+    // A filter changed. The search box keeps its place (and focus) while typing.
+    async function update({ keepFilters = false } = {}) {
+      if (!keepFilters) {
+        document.getElementById('list-filters').innerHTML = filtersHtml();
+        bindFilters(update);
+      }
+      await loadPage({ append: false });
+    }
+
     await update();
   }
 
@@ -603,11 +634,19 @@
 
     const map = makeMap(document.getElementById('big-map')).setView(WOLLONGONG, 12);
     const seq = routeSeq;
-    const res = await loadGames();
-    if (isStale(seq)) return;
-    if (!res.ok) return toast(errorText(res.data));
+    // The map shows up to 200 of the soonest games (two pages of 100)
+    const games = [];
+    let cursor = null;
+    for (let page = 0; page < 2; page++) {
+      const res = await loadGames({ cursor, limit: 100 });
+      if (isStale(seq)) return;
+      if (!res.ok) return toast(errorText(res.data));
+      games.push(...res.data.games);
+      cursor = res.data.nextCursor;
+      if (!cursor) break;
+    }
 
-    const markers = res.data.map((game) => {
+    const markers = games.map((game) => {
       const { time, period } = timeParts(new Date(game.startsAt));
       return L.marker([game.location.lat, game.location.lng], { icon: pinIcon(game), title: game.title, alt: game.title })
         .bindPopup(`<p class="popup-title">${esc(game.title)}</p>

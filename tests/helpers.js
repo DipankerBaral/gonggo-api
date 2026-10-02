@@ -37,4 +37,20 @@ async function createGame(request, hostId, overrides = {}) {
   return res.json();
 }
 
-module.exports = { newUser, asUser, asNewUser, asAdmin, asAdminUser, daysFromNow, validGame, createGame };
+// The whole public list, following every page (tests share a busy database,
+// so a test's own game might be on page 5)
+async function listAll(request, query = '') {
+  const games = [];
+  let cursor = null;
+  do {
+    const params = new URLSearchParams(query);
+    params.set('limit', '100');
+    if (cursor) params.set('cursor', cursor);
+    const page = await (await request.get(`/games?${params}`)).json();
+    games.push(...page.games);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return games;
+}
+
+module.exports = { listAll, newUser, asUser, asNewUser, asAdmin, asAdminUser, daysFromNow, validGame, createGame };

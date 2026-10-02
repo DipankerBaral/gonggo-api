@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { newUser, asUser, createGame, daysFromNow } = require('./helpers');
+const { listAll, newUser, asUser, createGame, daysFromNow } = require('./helpers');
 
 // Other tests create games at the same time, so these tests check for
 // *their own* games in the list rather than counting everything.
@@ -8,7 +8,7 @@ const ids = (games) => games.map((g) => g.id);
 test.describe('Browsing games', () => {
   test('lists open games with spots left but hides the player list', async ({ request }) => {
     const game = await createGame(request, newUser('host'), { capacity: 6 });
-    const list = await (await request.get('/games')).json();
+    const list = await listAll(request);
 
     const found = list.find((g) => g.id === game.id);
     expect(found).toMatchObject({ spotsLeft: 5, playerCount: 1 });
@@ -20,7 +20,7 @@ test.describe('Browsing games', () => {
     const game = await createGame(request, host);
     await request.delete(`/games/${game.id}`, { headers: asUser(host) });
 
-    const list = await (await request.get('/games')).json();
+    const list = await listAll(request);
     expect(ids(list)).not.toContain(game.id);
   });
 
@@ -28,7 +28,7 @@ test.describe('Browsing games', () => {
     const game = await createGame(request, newUser('host'), { type: 'tournament' });
     expect(game.status).toBe('pending_payment');
 
-    const list = await (await request.get('/games')).json();
+    const list = await listAll(request);
     expect(ids(list)).not.toContain(game.id);
   });
 
@@ -36,7 +36,7 @@ test.describe('Browsing games', () => {
     const hoops = await createGame(request, newUser('host'), { sport: 'basketball' });
     const run = await createGame(request, newUser('host'), { sport: 'running' });
 
-    const list = await (await request.get('/games?sport=basketball')).json();
+    const list = await listAll(request, 'sport=basketball');
     expect(ids(list)).toContain(hoops.id);
     expect(ids(list)).not.toContain(run.id);
     expect(list.every((g) => g.sport === 'basketball')).toBe(true);
@@ -47,7 +47,7 @@ test.describe('Browsing games', () => {
     await request.post(`/games/${full.id}/join`, { headers: asUser(newUser('player')) });
     const open = await createGame(request, newUser('host'), { capacity: 5 });
 
-    const list = await (await request.get('/games?hasSpots=true')).json();
+    const list = await listAll(request, 'hasSpots=true');
     expect(ids(list)).toContain(open.id);
     expect(ids(list)).not.toContain(full.id);
   });
@@ -56,7 +56,7 @@ test.describe('Browsing games', () => {
     const later = await createGame(request, newUser('host'), { startsAt: daysFromNow(9) });
     const sooner = await createGame(request, newUser('host'), { startsAt: daysFromNow(8) });
 
-    const list = ids(await (await request.get('/games')).json());
+    const list = ids(await listAll(request));
     expect(list.indexOf(sooner.id)).toBeLessThan(list.indexOf(later.id));
   });
 

@@ -98,7 +98,7 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 | Method | Path | Who | What |
 |---|---|---|---|
 | GET | /health | anyone | health check |
-| GET | /games?sport=&hasSpots=true | anyone | upcoming open games, soonest first |
+| GET | /games?sport=&hasSpots=true&q=&when=&limit=&cursor= | anyone | upcoming open games, soonest first, 20 per page: `{ games, nextCursor, total, inNext7Days }`. `q` searches titles and places; `when` is `today`, `weekend` or `week` |
 | GET | /games/:id | anyone | one game with its players |
 | POST | /games | user | post a game (up to two upcoming games per person) |
 | POST | /games/:id/join | user | take a spot |
@@ -152,6 +152,5 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 
 ## Known gaps
 
-- **Pagination.** `GET /games` returns every upcoming game. Fine for dozens; slow with hundreds.
 - **Rate limit counts live in memory**, per container. Move them to Redis if running several.
 - **Tests share the database** with the app you run locally; a separate test database is planned.

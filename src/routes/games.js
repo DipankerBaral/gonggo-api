@@ -10,12 +10,58 @@ const ah = require('../asyncHandler');
 const router = express.Router();
 
 // GET /games?sport=soccer&hasSpots=true
+// Wollongong dates (YYYY-MM-DD) of this weekend, or the coming one
+function weekendDates(now = new Date()) {
+  const fmt = (d, opts) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', ...opts }).format(d);
+  const dates = [];
+  for (let i = 0; i < 7 && dates.length < 2; i++) {
+    const d = new Date(now.getTime() + i * 864e5);
+    const day = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', weekday: 'short' }).format(d);
+    if (day === 'Sat' || day === 'Sun') dates.push(fmt(d, { year: 'numeric', month: '2-digit', day: '2-digit' }));
+    else if (dates.length) break;
+  }
+  return dates;
+}
+
+// Where a page stopped, as an opaque string the client sends back for the next page
+const encodeCursor = (game) => Buffer.from(JSON.stringify({ s: game.startsAt, i: game.id })).toString('base64url');
+function decodeCursor(cursor) {
+  try {
+    const { s, i } = JSON.parse(Buffer.from(String(cursor), 'base64url').toString());
+    if (Number.isNaN(new Date(s).getTime()) || !/^[0-9a-f-]{36}$/i.test(i)) return null;
+    return { startsAt: s, id: i };
+  } catch {
+    return null;
+  }
+}
+
+// GET /games?sport=soccer&hasSpots=true&q=futsal&when=weekend&limit=20&cursor=...
+// -> { games, nextCursor, total, inNext7Days }
 router.get('/', ah(async (req, res) => {
-  const games = await store.listOpenGames({
-    sport: req.query.sport,
+  const { sport, q, when, cursor } = req.query;
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 100);
+  if (when && !['today', 'weekend', 'week'].includes(when)) {
+    return res.status(400).json({ errors: ["when must be 'today', 'weekend' or 'week'"] });
+  }
+  const after = cursor ? decodeCursor(cursor) : null;
+  if (cursor && !after) return res.status(400).json({ errors: ['cursor is not valid; start again from the first page'] });
+
+  const result = await store.listOpenGames({
+    sport,
     hasSpots: req.query.hasSpots === 'true',
+    q: typeof q === 'string' && q.trim() ? q.trim().slice(0, 80) : undefined,
+    when,
+    weekendDates: weekendDates(),
+    after,
+    limit,
   });
-  res.json(games.map(toPublic));
+  const games = result.games.map(toPublic);
+  res.json({
+    games,
+    nextCursor: result.hasMore ? encodeCursor(games[games.length - 1]) : null,
+    total: result.total,
+    inNext7Days: result.inNext7Days,
+  });
 }));
 
 router.get('/:id', ah(async (req, res) => {

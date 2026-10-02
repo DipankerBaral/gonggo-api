@@ -37,7 +37,14 @@ async function completeWelcome(page, { dateOfBirth = '1995-06-15' } = {}) {
   return dialog;
 }
 
+// Search the home page list, the way a person looks for a particular game.
+// Tests share a busy database, so their game might not be on the first page.
+async function searchFor(page, text) {
+  await page.getByRole('searchbox', { name: 'Search games' }).fill(text);
+  await page.waitForResponse((r) => r.url().includes('/games?') && r.url().includes(`q=${encodeURIComponent(text).replace(/%20/g, '+')}`));
+}
+
 // A title nobody else's test will use, so each test can find its own game
 const uniqueTitle = (label) => `${label} ${Math.random().toString(36).slice(2, 7)}`;
 
-module.exports = { test, expect: base.expect, signInAs, completeWelcome, uniqueTitle, newUser, createGame, validGame };
+module.exports = { test, expect: base.expect, signInAs, completeWelcome, searchFor, uniqueTitle, newUser, createGame, validGame };

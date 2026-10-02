@@ -1,4 +1,4 @@
-const { test, expect, uniqueTitle, newUser, createGame } = require('./fixtures');
+const { test, expect, searchFor, uniqueTitle, newUser, createGame } = require('./fixtures');
 
 test.describe('Browsing games', () => {
   test('anyone can browse and open games without signing in', async ({ page, request }) => {
@@ -7,6 +7,7 @@ test.describe('Browsing games', () => {
 
     await page.goto('/');
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await searchFor(page, title);
     await page.getByText(title).click();
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Join game' })).toBeVisible();
@@ -18,6 +19,7 @@ test.describe('Browsing games', () => {
     await createGame(request, newUser('host'), { title, sport: 'volleyball', capacity: 8 });
 
     await page.goto('/');
+    await searchFor(page, title);
     const row = page.getByTestId('game-row').filter({ hasText: title });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Volleyball');
@@ -30,18 +32,21 @@ test.describe('Browsing games', () => {
     await request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': newUser('p'), 'x-dev-consent': 'yes' } });
 
     await page.goto('/');
+    await searchFor(page, title);
     const spots = page.getByTestId('game-row').filter({ hasText: title }).getByTestId('spots-left');
     await expect(spots).toHaveText('1 spot left');
     await expect(spots).toHaveClass(/last/);
   });
 
   test('filters by sport', async ({ page, request }) => {
-    const hoops = uniqueTitle('Hoops');
-    const run = uniqueTitle('Run club');
+    const tag = uniqueTitle('Sporty');
+    const hoops = `${tag} hoops`;
+    const run = `${tag} run club`;
     await createGame(request, newUser('host'), { title: hoops, sport: 'basketball' });
     await createGame(request, newUser('host'), { title: run, sport: 'running' });
 
     await page.goto('/');
+    await searchFor(page, tag); // just this test's two games
     await expect(page.getByText(run)).toBeVisible();
 
     await page.getByRole('button', { name: 'Basketball' }).click();
@@ -76,6 +81,7 @@ test.describe('Browsing games', () => {
     await createGame(request, newUser('sam'), { title, description: 'Bring indoor shoes.' });
 
     await page.goto('/');
+    await searchFor(page, title);
     await page.getByText(title).click();
 
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
@@ -89,7 +95,8 @@ test.describe('Browsing games', () => {
     // Its own spot on the map: other tests' games all sit at the same park,
     // and pins at the same place overlap (a real UX issue to solve later)
     const location = { name: 'Nets', lat: -34.36 - Math.random() * 0.1, lng: 150.85 + Math.random() * 0.05 };
-    await createGame(request, newUser('host'), { title, sport: 'cricket', location });
+    // Soon, so it's among the soonest games the map shows
+    await createGame(request, newUser('host'), { title, sport: 'cricket', location, startsAt: new Date(Date.now() + 3600e3).toISOString() });
 
     await page.goto('/#/map');
     const pin = page.locator(`.leaflet-marker-icon[title="${title}"]`);
@@ -100,10 +107,12 @@ test.describe('Browsing games', () => {
   });
 
   test('user-entered text is shown as text, never run as code', async ({ page, request }) => {
-    const title = `<img src=x onerror="window.hacked=1"> ${uniqueTitle('xss')}`;
+    const marker = uniqueTitle('xss');
+    const title = `<img src=x onerror="window.hacked=1"> ${marker}`;
     await createGame(request, newUser('host'), { title });
 
     await page.goto('/');
+    await searchFor(page, marker);
     await expect(page.getByText(title)).toBeVisible();
     expect(await page.evaluate(() => window.hacked)).toBeUndefined();
   });

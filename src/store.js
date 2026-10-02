@@ -74,21 +74,59 @@ async function createGameIfUnderLimit(data, limit) {
   });
 }
 
-async function listOpenGames({ sport, hasSpots } = {}) {
+// The public list: open games that haven't ended, soonest first, one page at a time.
+//   sport, hasSpots  narrow the list
+//   q                search titles and places ("futsal", "Thirroul")
+//   when             'today' | 'weekend' | 'week', in Wollongong time
+//   after            where the previous page stopped: { startsAt, id }
+// Returns { games, hasMore, total, inNext7Days }
+async function listOpenGames({ sport, hasSpots, q, when, weekendDates = [], after, limit = 20 } = {}) {
   const where = ["g.status = 'open'", 'g.ends_at > now()']; // includes games happening right now
   const params = [];
-  if (sport) {
-    params.push(sport);
-    where.push(`g.sport = $${params.length}`);
+  const add = (value) => { params.push(value); return `$${params.length}`; };
+
+  if (sport) where.push(`g.sport = ${add(sport)}`);
+  if (hasSpots) where.push('(SELECT count(*) FROM game_players p WHERE p.game_id = g.id) < g.capacity');
+  if (q) {
+    // Escape % and _ so a search for "50%" means exactly that
+    const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const ref = add(pattern);
+    where.push(`(g.title ILIKE ${ref} ESCAPE '\\' OR g.location_name ILIKE ${ref} ESCAPE '\\')`);
   }
-  if (hasSpots) {
-    where.push('(SELECT count(*) FROM game_players p WHERE p.game_id = g.id) < g.capacity');
-  }
+  const base = [...where]; // everything except "when", for the "next 7 days" count
+  const sydneyDay = "(g.starts_at AT TIME ZONE 'Australia/Sydney')::date";
+  if (when === 'today') where.push(`(${sydneyDay} = (now() AT TIME ZONE 'Australia/Sydney')::date OR g.starts_at <= now())`);
+  if (when === 'weekend') where.push(`${sydneyDay} = ANY(${add(weekendDates)}::date[])`);
+  if (when === 'week') where.push("g.starts_at < now() + interval '7 days'");
+
+  const filtered = [...where];
+  if (after) where.push(`(g.starts_at, g.id) > (${add(after.startsAt)}::timestamptz, ${add(after.id)}::uuid)`);
+
+  const pageParams = [...params];
   const { rows } = await pool.query(
-    `${GAME_SELECT} WHERE ${where.join(' AND ')} ORDER BY g.starts_at ASC`,
-    params,
+    `${GAME_SELECT} WHERE ${where.join(' AND ')} ORDER BY g.starts_at ASC, g.id ASC LIMIT ${Number(limit) + 1}`,
+    pageParams,
   );
-  return rows.map(toGame);
+
+  // Counts use the same filters (but not the page position)
+  const usedIn = (clauses) => params.filter((_, i) => clauses.join(' ').includes(`$${i + 1}`));
+  const renumber = (clauses) => {
+    const used = params.map((_, i) => i).filter((i) => clauses.join(' ').includes(`$${i + 1}`));
+    const map = new Map(used.map((old, idx) => [old + 1, idx + 1]));
+    return clauses.map((c) => c.replace(/\$(\d+)/g, (m, n) => (map.has(Number(n)) ? `$${map.get(Number(n))}` : m)));
+  };
+  const count = async (clauses) => {
+    const { rows: [{ n }] } = await pool.query(
+      `SELECT count(*)::int AS n FROM games g WHERE ${renumber(clauses).join(' AND ')}`, usedIn(clauses));
+    return n;
+  };
+  const [total, inNext7Days] = await Promise.all([
+    count(filtered),
+    count([...base, "g.starts_at < now() + interval '7 days'"]),
+  ]);
+
+  const hasMore = rows.length > limit;
+  return { games: rows.slice(0, limit).map(toGame), hasMore, total, inNext7Days };
 }
 
 // Admin view: everything, most-reported first

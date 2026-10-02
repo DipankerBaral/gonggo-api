@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { newUser, asUser, validGame, createGame, daysFromNow } = require('./helpers');
+const { listAll, newUser, asUser, validGame, createGame, daysFromNow } = require('./helpers');
 
 const secondsFromNow = (s) => new Date(Date.now() + s * 1000).toISOString();
 
@@ -22,7 +22,7 @@ test.describe('How long a game runs', () => {
     const game = await createGame(request, newUser('host'), { startsAt: secondsFromNow(2), durationMinutes: 15 });
     await new Promise((r) => setTimeout(r, 2500)); // let it start
 
-    const list = await (await request.get('/games')).json();
+    const list = await listAll(request);
     expect(list.map((g) => g.id)).toContain(game.id);
     const late = await request.post(`/games/${game.id}/join`, { headers: asUser(newUser('late')) });
     expect(late.status()).toBe(200);

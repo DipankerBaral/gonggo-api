@@ -12,6 +12,11 @@ async function main() {
   const server = app.listen(config.port, () => {
     console.log(`GongGo API listening on port ${config.port}`);
   });
+  // Keep idle connections open longer than the AWS load balancer does (60s).
+  // Node's default (5s) means the app can close a connection at the same
+  // moment the load balancer (or a test) reuses it: random ECONNRESET / 502s.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000; // must be a little longer than keepAliveTimeout
 
   // Graceful shutdown. "docker stop" (and ECS during deploys) sends SIGTERM:
   // finish in-flight requests, close database connections, then exit.
