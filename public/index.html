@@ -23,7 +23,16 @@
       <a href="#/" data-view="list">List</a>
       <a href="#/map" data-view="map">Map</a>
     </nav>
-    <a href="#/me" class="me" data-view="me" id="me-link" hidden>My games</a>
+    <div class="account" id="account" hidden>
+      <button type="button" class="me account-button" id="account-button" aria-expanded="false" aria-controls="account-menu">
+        <span id="account-name"></span><span class="caret" aria-hidden="true"></span>
+      </button>
+      <div class="account-menu" id="account-menu" hidden>
+        <a href="#/me" data-view="me">My games</a>
+        <button type="button" id="menu-rename">Change name</button>
+        <button type="button" id="menu-sign-out">Sign out</button>
+      </div>
+    </div>
     <button type="button" class="me sign-in-button" id="sign-in-button" hidden>Sign in</button>
   </header>
 

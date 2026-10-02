@@ -101,6 +101,8 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 | POST | /games | user | post a game (up to two upcoming games per person) |
 | POST | /games/:id/join | user | take a spot |
 | DELETE | /games/:id/join | user | give your spot back |
+| PATCH | /games/:id | host | edit a game (send only the fields that change) |
+| DELETE | /games/:id/players/:userId | host | remove a player (they can't rejoin) |
 | DELETE | /games/:id | host | cancel your game |
 | POST | /games/:id/report | user | flag a game for the admin |
 | GET | /me/games | user | games I host or joined: upcoming, plus the last 30 days |
@@ -118,6 +120,12 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 
 ## Rules
 
+- Games last 90 minutes unless the host says otherwise (15 minutes to 12 hours). They stay
+  listed, and joinable, until they end.
+- Hosts can edit a game until it ends; everyone keeps their spot. Capacity can't drop below
+  the people already in.
+- Per-person rate limits on posting, editing, joining, commenting, reporting and profile
+  changes (see `RATE_LIMITS` in `src/constants.js`). Over the limit returns 429 with Retry-After.
 - Up to two upcoming games per host (open or awaiting payment, and not yet started).
 - Locations must be inside the Illawarra region.
 - Tournaments start as `pending_payment` and stay hidden until approved (Stripe comes later).
@@ -125,3 +133,9 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 - Comments are visible only to the game's players and host.
 - Joining and posting are safe under concurrency: row locks stop two people taking the last
   spot, and an advisory lock stops one person double-posting.
+
+## Known gaps
+
+- **Pagination.** `GET /games` returns every upcoming game. Fine for dozens; slow with hundreds.
+- **Rate limit counts live in memory**, per container. Move them to Redis if running several.
+- **Tests share the database** with the app you run locally; a separate test database is planned.

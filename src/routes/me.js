@@ -4,6 +4,7 @@ const { requireUser } = require('../middleware/auth');
 const { isUpcoming, toPublic } = require('../gameHelpers');
 const { HISTORY_DAYS } = require('../constants');
 const { validateName } = require('../validation');
+const { profileLimit } = require('../middleware/rateLimit');
 const ah = require('../asyncHandler');
 
 const router = express.Router();
@@ -12,7 +13,7 @@ const router = express.Router();
 router.get('/', requireUser, (req, res) => res.json(req.user));
 
 // PATCH /me { name }: choose or change the name other players see
-router.patch('/', requireUser, ah(async (req, res) => {
+router.patch('/', requireUser, profileLimit, ah(async (req, res) => {
   const { name, error } = validateName(req.body?.name);
   if (error) return res.status(400).json({ errors: [error] });
   res.json(await store.setDisplayName(req.userId, name));

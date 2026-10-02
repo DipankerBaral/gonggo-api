@@ -23,9 +23,9 @@ variable "desired_count" {
 }
 
 variable "seed_sample_games" {
-  description = "Add 3 sample Wollongong games to an empty database"
+  description = "Add 3 sample Wollongong games to an empty database. Off on AWS: real users would try to join games that don't exist."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ---- Sign-in

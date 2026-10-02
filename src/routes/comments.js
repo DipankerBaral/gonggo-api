@@ -6,6 +6,7 @@ const store = require('../store');
 const { requireUser } = require('../middleware/auth');
 const { fallbackName } = require('../validation');
 const ah = require('../asyncHandler');
+const { commentLimit } = require('../middleware/rateLimit');
 
 const router = express.Router({ mergeParams: true });
 const MAX_LENGTH = 500;
@@ -37,7 +38,7 @@ router.get('/', requireUser, ah(async (req, res) => {
   })));
 }));
 
-router.post('/', requireUser, ah(async (req, res) => {
+router.post('/', requireUser, commentLimit, ah(async (req, res) => {
   const game = await gameForPlayer(req, res);
   if (!game) return;
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';

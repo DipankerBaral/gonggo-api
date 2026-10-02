@@ -44,7 +44,7 @@ test.describe('Posting a game', () => {
 
     await expect(page.getByRole('status')).toHaveText('Game posted.');
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
-    await expect(page.getByText("You're hosting.")).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Edit game' })).toBeVisible(); // hosts get Edit and Cancel
     await expect(page.getByTestId('spots-left')).toHaveText('9 spots left');
   });
 

@@ -23,6 +23,9 @@ function toGame(row) {
     type: row.type,
     capacity: row.capacity,
     startsAt: row.starts_at.toISOString(),
+    durationMinutes: row.duration_minutes,
+    endsAt: row.ends_at.toISOString(),
+    updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
     description: row.description,
     location: { name: row.location_name, lat: row.lat, lng: row.lng },
     hostId: row.host_id,
@@ -50,7 +53,7 @@ async function createGameIfUnderLimit(data, limit) {
 
     const existing = await client.query(
       `SELECT id FROM games
-       WHERE host_id = $1 AND status IN ('open', 'pending_payment') AND starts_at > now()
+       WHERE host_id = $1 AND status IN ('open', 'pending_payment') AND ends_at > now()
        ORDER BY starts_at`,
       [data.hostId],
     );
@@ -58,12 +61,12 @@ async function createGameIfUnderLimit(data, limit) {
 
     const status = data.type === 'tournament' ? 'pending_payment' : 'open';
     const { rows } = await client.query(
-      `INSERT INTO games (host_id, title, sport, type, capacity, starts_at, description,
-                          location_name, lat, lng, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO games (host_id, title, sport, type, capacity, starts_at, duration_minutes, ends_at,
+                          description, location_name, lat, lng, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $6::timestamptz + make_interval(mins => $7), $8, $9, $10, $11, $12)
        RETURNING id`,
       [data.hostId, data.title, data.sport, data.type, data.capacity, data.startsAt,
-        data.description, data.location.name, data.location.lat, data.location.lng, status],
+        data.durationMinutes || 90, data.description, data.location.name, data.location.lat, data.location.lng, status],
     );
     // The host takes the first spot
     await client.query('INSERT INTO game_players (game_id, user_id) VALUES ($1, $2)', [rows[0].id, data.hostId]);
@@ -72,7 +75,7 @@ async function createGameIfUnderLimit(data, limit) {
 }
 
 async function listOpenGames({ sport, hasSpots } = {}) {
-  const where = ["g.status = 'open'", 'g.starts_at > now()'];
+  const where = ["g.status = 'open'", 'g.ends_at > now()']; // includes games happening right now
   const params = [];
   if (sport) {
     params.push(sport);
@@ -98,6 +101,35 @@ async function listAllGamesWithReports() {
     FROM games g
     ORDER BY report_count DESC, g.created_at DESC`);
   return rows.map(toGame);
+}
+
+// A host's edit. `value` is the full, validated game; only these columns change.
+async function updateGameDetails(id, value) {
+  await pool.query(
+    `UPDATE games SET
+       title = $2, sport = $3, capacity = $4, starts_at = $5, duration_minutes = $6,
+       ends_at = $5::timestamptz + make_interval(mins => $6),
+       description = $7, location_name = $8, lat = $9, lng = $10, updated_at = now()
+     WHERE id = $1`,
+    [id, value.title, value.sport, value.capacity, value.startsAt, value.durationMinutes,
+      value.description, value.location.name, value.location.lat, value.location.lng],
+  );
+  return getGame(id);
+}
+
+// The host takes someone out of their game; they can't rejoin it
+async function removePlayerByHost(gameId, userId) {
+  return withTransaction(async (client) => {
+    await client.query('DELETE FROM game_players WHERE game_id = $1 AND user_id = $2', [gameId, userId]);
+    await client.query(
+      'INSERT INTO game_removed_players (game_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [gameId, userId]);
+  });
+}
+
+async function wasRemovedFrom(gameId, userId) {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM game_removed_players WHERE game_id = $1 AND user_id = $2', [gameId, userId]);
+  return rowCount > 0;
 }
 
 async function setStatus(id, status, removedReason = null) {
@@ -152,7 +184,7 @@ async function banUserAndRemoveGames(userId) {
     await client.query('INSERT INTO banned_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
     const { rows } = await client.query(
       `UPDATE games SET status = 'removed', removed_reason = 'Host banned'
-       WHERE host_id = $1 AND status IN ('open', 'pending_payment') AND starts_at > now()
+       WHERE host_id = $1 AND status IN ('open', 'pending_payment') AND ends_at > now()
        RETURNING id`,
       [userId],
     );
@@ -253,7 +285,8 @@ async function countGames() {
 }
 
 module.exports = {
-  getGame, createGameIfUnderLimit, listOpenGames, listGamesForUser, listAllGamesWithReports, setStatus,
+  getGame, createGameIfUnderLimit, listOpenGames, listGamesForUser,
+  updateGameDetails, removePlayerByHost, wasRemovedFrom, listAllGamesWithReports, setStatus,
   addPlayerIfSpace, removePlayer, hasReported, addReport, listReports,
   banUserAndRemoveGames, isBanned, countGames,
   ensureUser, setDisplayName, listPlayersWithNames,

@@ -1,6 +1,10 @@
-const { SPORTS, REGION_BOUNDS, MIN_CAPACITY, MAX_CAPACITY } = require('./constants');
+const {
+  SPORTS, REGION_BOUNDS, MIN_CAPACITY, MAX_CAPACITY, MIN_DURATION, MAX_DURATION, DEFAULT_DURATION,
+} = require('./constants');
 
-function validateGame(body) {
+// Checks a whole game. requireFutureStart is off when a host edits a game that
+// has already started without changing its time (e.g. fixing the description).
+function validateGame(body, { requireFutureStart = true } = {}) {
   const b = body || {};
   const errors = [];
 
@@ -18,7 +22,12 @@ function validateGame(body) {
 
   const start = new Date(b.startsAt);
   if (!b.startsAt || Number.isNaN(start.getTime())) errors.push('startsAt must be a valid ISO date, e.g. 2026-10-04T09:00:00+10:00');
-  else if (start <= new Date()) errors.push('startsAt must be in the future');
+  else if (requireFutureStart && start <= new Date()) errors.push('startsAt must be in the future');
+
+  const duration = b.durationMinutes ?? DEFAULT_DURATION;
+  if (!Number.isInteger(duration) || duration < MIN_DURATION || duration > MAX_DURATION) {
+    errors.push(`durationMinutes must be a whole number from ${MIN_DURATION} to ${MAX_DURATION}`);
+  }
 
   const loc = b.location;
   if (!loc || typeof loc.name !== 'string' || !loc.name.trim()) errors.push('location.name is required');
@@ -41,6 +50,7 @@ function validateGame(body) {
       type,
       capacity: b.capacity,
       startsAt: start.toISOString(),
+      durationMinutes: duration,
       description: typeof b.description === 'string' ? b.description.trim().slice(0, 500) : '',
       location: { name: loc.name.trim(), lat: loc.lat, lng: loc.lng },
     },
@@ -64,4 +74,26 @@ function fallbackName(userId) {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
-module.exports = { validateGame, validateName, fallbackName };
+// A host's changes to an existing game: anything they leave out stays as it is.
+// The type (casual or tournament) can't change.
+const EDITABLE = ['title', 'sport', 'capacity', 'startsAt', 'durationMinutes', 'description', 'location'];
+
+function validateGameEdit(body, game) {
+  const b = body || {};
+  const changed = EDITABLE.filter((field) => b[field] !== undefined);
+  if (!changed.length) return { errors: ['nothing to change'] };
+
+  const merged = { ...game, type: game.type };
+  for (const field of changed) merged[field] = b[field];
+
+  const timeChanged = changed.includes('startsAt') && new Date(b.startsAt).getTime() !== new Date(game.startsAt).getTime();
+  const result = validateGame(merged, { requireFutureStart: timeChanged });
+  if (result.errors.length) return result;
+
+  if (result.value.capacity < game.players.length) {
+    return { errors: [`capacity can't be less than the ${game.players.length} people already in the game`] };
+  }
+  return { errors: [], value: result.value, changed };
+}
+
+module.exports = { validateGame, validateGameEdit, validateName, fallbackName };

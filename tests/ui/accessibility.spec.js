@@ -13,6 +13,11 @@ async function expectNoViolations(page) {
 }
 
 test.describe('Accessibility', () => {
+  // axe checks every element on the page. With hundreds of games in a long-lived
+  // test database the list page takes ~30s to check, so allow more time.
+  // (The real fix is paginating the list; see the README's "Known gaps".)
+  test.setTimeout(60_000);
+
   test('game list', async ({ page, request }) => {
     await createGame(request, newUser('host'), { title: uniqueTitle('A11y list') });
     await page.goto('/');

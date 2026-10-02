@@ -1,4 +1,7 @@
-const isUpcoming = (game) => new Date(game.startsAt) > new Date();
+const hasStarted = (game) => new Date(game.startsAt) <= new Date();
+const isOver = (game) => new Date(game.endsAt) <= new Date();
+// Not finished yet: either coming up or happening right now
+const isUpcoming = (game) => !isOver(game);
 
 // What the public sees: counts, not the full player list
 function toPublic(game) {
@@ -10,4 +13,4 @@ function toPublic(game) {
   };
 }
 
-module.exports = { isUpcoming, toPublic };
+module.exports = { isUpcoming, hasStarted, isOver, toPublic };

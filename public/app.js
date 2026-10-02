@@ -77,6 +77,14 @@
     return `${fmt({ weekday: 'long', day: 'numeric', month: 'long' }).format(date)}, ${time}${period}`;
   }
 
+  // "Friday 2 October, 6:00pm to 7:30pm"
+  function whenRange(game) {
+    const end = timeParts(new Date(game.endsAt));
+    return `${whenLong(new Date(game.startsAt))} to ${end.time}${end.period}`;
+  }
+
+  const isOnNow = (game) => new Date(game.startsAt) <= new Date() && new Date(game.endsAt) > new Date();
+
   // ---------------------------------------------------------------- the user
 
   const Auth = window.GongGoAuth;
@@ -97,8 +105,37 @@
   }
 
   function renderTopbar() {
-    document.getElementById('me-link').hidden = !profile;
+    document.getElementById('account').hidden = !profile;
     document.getElementById('sign-in-button').hidden = !!profile;
+    if (profile) document.getElementById('account-name').textContent = profile.name || 'Account';
+    closeAccountMenu();
+  }
+
+  // ---- the account menu in the top bar
+
+  const accountButton = () => document.getElementById('account-button');
+  const accountMenu = () => document.getElementById('account-menu');
+
+  function closeAccountMenu({ focusButton = false } = {}) {
+    const button = accountButton();
+    if (!button || button.getAttribute('aria-expanded') !== 'true') return;
+    button.setAttribute('aria-expanded', 'false');
+    accountMenu().hidden = true;
+    if (focusButton) button.focus();
+  }
+
+  function openAccountMenu() {
+    accountButton().setAttribute('aria-expanded', 'true');
+    accountMenu().hidden = false;
+    accountMenu().querySelector('a, button').focus();
+  }
+
+  function signOutNow() {
+    Auth.signOut(); // in real sign-in this also ends the session on Cognito's side
+    profile = null;
+    renderTopbar();
+    toast('Signed out.');
+    location.hash = '#/';
   }
 
   // Opens a dialog and resolves with the result of `setup` (or null on "Not now")
@@ -296,7 +333,8 @@
   function gameRowHtml(game, { withDate = false, tag = '' } = {}) {
     const start = new Date(game.startsAt);
     const { time, period } = timeParts(start);
-    const live = game.status === 'open' && start > new Date();
+    const live = game.status === 'open' && new Date(game.endsAt) > new Date();
+    const onNow = live && isOnNow(game) ? '<span class="status-tag on-now">On now</span>' : '';
     return `<li><a class="game" href="#/game/${esc(game.id)}" data-testid="game-row">
       <div class="game-time">${time}<small>${period}</small></div>
       <div>
@@ -304,7 +342,7 @@
         <h3 class="game-title">${esc(game.title)}</h3>
         ${withDate ? `<div class="game-date">${esc(dayLabel(start))}</div>` : ''}
         <div class="game-place">${esc(game.location.name)}</div>
-        ${tag}
+        ${onNow}${tag}
       </div>
       ${live ? rosterHtml(game) : ''}
     </a></li>`;
@@ -395,14 +433,18 @@
     const me = profile;
     const isHost = !!me && me.id === game.hostId;
     const isIn = !!me && game.players.some((p) => p.id === me.id);
-    const started = new Date(game.startsAt) <= new Date();
+    const over = new Date(game.endsAt) <= new Date();
+    const onNow = isOnNow(game);
     const cancelled = game.status === 'cancelled';
     document.title = `${game.title}: GongGo`;
 
     let action;
     if (cancelled) action = '<p>This game was cancelled.</p>';
-    else if (started) action = '<p>This game has already started.</p>';
-    else if (isHost) action = `<p>You're hosting.</p><button type="button" class="button danger" data-action="cancel">Cancel game</button>`;
+    else if (over) action = '<p>This game has finished.</p>';
+    else if (isHost) {
+      action = `<a class="button quiet" href="#/game/${esc(game.id)}/edit">Edit game</a>
+        <button type="button" class="button danger" data-action="cancel">Cancel game</button>`;
+    }
     else if (isIn) action = `<button type="button" class="button quiet" data-action="leave">Leave game</button>`;
     else if (game.spotsLeft === 0) action = '<button type="button" class="button" disabled>Game full</button>';
     else action = '<button type="button" class="button" data-action="join">Join game</button>';
@@ -411,8 +453,9 @@
       <a class="back" href="#/">All games</a>
       <div class="detail-sport">${esc(SPORTS[game.sport] || game.sport)}</div>
       <h1 tabindex="-1">${esc(game.title)}</h1>
+      ${onNow && !cancelled ? '<p class="on-now-banner"><span class="status-tag on-now">On now</span> Running late? You can still join.</p>' : ''}
       <dl class="facts">
-        <dt>When</dt><dd>${esc(whenLong(new Date(game.startsAt)))}</dd>
+        <dt>When</dt><dd data-testid="when">${esc(whenRange(game))}${game.updatedAt ? ' <span class="tag">(details updated)</span>' : ''}</dd>
         <dt>Where</dt><dd>${esc(game.location.name)}</dd>
       </dl>
       <div id="mini-map" class="mini-map" role="img" aria-label="Map showing ${esc(game.location.name)}"></div>
@@ -420,8 +463,12 @@
       <h2>Who's coming</h2>
       ${rosterHtml(game, { large: true })}
       <ul class="players" data-testid="players">
-        ${game.players.map((p) => `<li>${esc(playerName(p))}${p.id === game.hostId ? ' <span class="tag">host</span>' : ''}</li>`).join('')}
+        ${game.players.map((p) => `<li>${esc(playerName(p))}${p.id === game.hostId ? ' <span class="tag">host</span>' : ''}${
+          isHost && p.id !== game.hostId && !over && !cancelled
+            ? ` <button type="button" class="link-button remove-player" data-remove="${esc(p.id)}" data-name="${esc(p.name)}" aria-label="Remove ${esc(p.name)}">Remove</button>`
+            : ''}</li>`).join('')}
       </ul>
+      ${!cancelled ? '<button type="button" class="button quiet share-button" id="share-game">Share game</button>' : ''}
       <div class="action-bar">${action}</div>
       <section class="comments" aria-labelledby="comments-title">
         <h2 id="comments-title">Comments</h2>
@@ -450,6 +497,16 @@
     const button = app.querySelector('[data-action]');
     if (button) button.addEventListener('click', () => handleAction(button.dataset.action, game));
 
+    app.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
+      if (!window.confirm(`Remove ${b.dataset.name} from this game? They won't be able to join it again.`)) return;
+      const r = await api(`/games/${game.id}/players/${encodeURIComponent(b.dataset.remove)}`, { method: 'DELETE' });
+      toast(r.ok ? `${b.dataset.name} was removed.` : errorText(r.data));
+      if (!isStale(seq)) detailView(game.id);
+    }));
+
+    const share = document.getElementById('share-game');
+    if (share) share.addEventListener('click', () => shareGame(game));
+
     if (isIn) loadComments(game, seq);
 
     const report = document.getElementById('report-form');
@@ -463,6 +520,25 @@
         toast(r.ok ? 'Report sent. Thanks for keeping GongGo friendly.' : errorText(r.data));
         if (r.ok) report.closest('details').open = false;
       });
+    }
+  }
+
+  // Phones get the system share sheet (WhatsApp, Messages, Instagram...);
+  // elsewhere we copy the link
+  async function shareGame(game) {
+    const url = `${location.origin}/#/game/${game.id}`;
+    const { time, period } = timeParts(new Date(game.startsAt));
+    const text = `${game.title}, ${dayLabel(new Date(game.startsAt))} ${time}${period} at ${game.location.name}. ${
+      game.spotsLeft > 0 ? `${game.spotsLeft} spot${game.spotsLeft === 1 ? '' : 's'} left` : 'Waitlist only'} on GongGo:`;
+    if (navigator.share) {
+      try { await navigator.share({ title: game.title, text, url }); } catch { /* they closed the share sheet */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      toast('Link copied. Paste it anywhere to share.');
+    } catch {
+      window.prompt('Copy this link to share the game:', url);
     }
   }
 
@@ -597,73 +673,106 @@
 
     document.getElementById('rename').addEventListener('click', async () => {
       if (await askName({ current: profile.name || '' })) {
+        renderTopbar();
         toast('Name changed.');
         meView();
       }
     });
-    document.getElementById('sign-out').addEventListener('click', () => {
-      Auth.signOut();
-      profile = null;
-      renderTopbar();
-      toast('Signed out.');
-      location.hash = '#/';
-    });
+    document.getElementById('sign-out').addEventListener('click', signOutNow);
   }
 
-  function formView() {
-    document.title = 'Post a game: GongGo';
+  const DURATIONS = [[30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], [90, '1½ hours'],
+    [120, '2 hours'], [180, '3 hours'], [240, '4 hours'], [360, '6 hours'], [480, '8 hours']];
+
+  // datetime-local inputs want "YYYY-MM-DDTHH:MM" in the browser's own time
+  function localInputValue(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  // Posting a new game, or (with editId) editing one you host
+  async function formView(editId = null) {
+    const editing = !!editId;
+    document.title = `${editing ? 'Edit game' : 'Post a game'}: GongGo`;
     if (!profile || !profile.name) {
       return signInCard('Sign in to post a game',
         'Hosting is free. Sign in so players know who is running the game.', 'Sign in to post a game');
     }
-    const now = new Date(Date.now() + 5 * 60 * 1000);
-    const pad = (n) => String(n).padStart(2, '0');
-    const localMin = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    let game = null;
+    if (editing) {
+      const seq = routeSeq;
+      const res = await api(`/games/${encodeURIComponent(editId)}`);
+      if (isStale(seq)) return;
+      if (!res.ok || res.data.hostId !== profile.id) {
+        app.innerHTML = `<a class="back" href="#/">All games</a>
+          <div class="empty"><h2>You can't edit this game</h2><p>Only the host can change a game's details.</p></div>`;
+        return;
+      }
+      game = res.data;
+    }
+
+    const v = game || { title: '', sport: 'soccer', capacity: 10, durationMinutes: 90, description: '', location: { name: '' } };
+    const startValue = game ? localInputValue(new Date(game.startsAt)) : '';
+    const started = game && new Date(game.startsAt) <= new Date();
+    const minCapacity = game ? Math.max(2, game.playerCount) : 2;
 
     app.innerHTML = `<form class="form" id="game-form" novalidate>
-      <a class="back" href="#/">All games</a>
-      <h1 tabindex="-1">Post a game</h1>
-      <p class="hint">You can host up to two upcoming games at a time. You'll take the first spot.</p>
+      <a class="back" href="${editing ? `#/game/${esc(game.id)}` : '#/'}">${editing ? 'Back to game' : 'All games'}</a>
+      <h1 tabindex="-1">${editing ? 'Edit game' : 'Post a game'}</h1>
+      <p class="hint">${editing
+        ? 'Everyone who has joined keeps their spot.'
+        : "You can host up to two upcoming games at a time. You'll take the first spot."}</p>
       <div id="form-errors"></div>
 
       <div class="field">
         <label for="f-title">What's the game?</label>
-        <input id="f-title" name="title" required minlength="3" maxlength="80" placeholder="7-a-side social">
+        <input id="f-title" name="title" required minlength="3" maxlength="80" placeholder="7-a-side social" value="${esc(v.title)}">
       </div>
       <div class="field-row">
         <div class="field">
           <label for="f-sport">Sport</label>
           <select id="f-sport" name="sport" required>
-            ${Object.entries(SPORTS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+            ${Object.entries(SPORTS).map(([val, l]) => `<option value="${val}"${val === v.sport ? ' selected' : ''}>${l}</option>`).join('')}
           </select>
         </div>
         <div class="field">
           <label for="f-capacity">Players</label>
-          <input id="f-capacity" name="capacity" type="number" inputmode="numeric" min="2" max="100" value="10" required>
+          <input id="f-capacity" name="capacity" type="number" inputmode="numeric" min="${minCapacity}" max="100" value="${v.capacity}" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="f-when">When</label>
+          <input id="f-when" name="startsAt" type="datetime-local" value="${startValue}"
+            ${started ? '' : `min="${localInputValue(new Date(Date.now() + 5 * 60 * 1000))}"`} required>
+        </div>
+        <div class="field">
+          <label for="f-duration">How long</label>
+          <select id="f-duration" name="durationMinutes">
+            ${DURATIONS.map(([m, l]) => `<option value="${m}"${m === v.durationMinutes ? ' selected' : ''}>${l}</option>`).join('')}
+          </select>
         </div>
       </div>
       <div class="field">
-        <label for="f-when">When</label>
-        <input id="f-when" name="startsAt" type="datetime-local" min="${localMin}" required>
-      </div>
-      <div class="field">
         <label for="f-place">Place name</label>
-        <input id="f-place" name="place" required maxlength="80" placeholder="Stuart Park, North Wollongong">
+        <input id="f-place" name="place" required maxlength="80" placeholder="Stuart Park, North Wollongong" value="${esc(v.location.name)}">
       </div>
       <div class="field">
         <span class="label" id="pin-label">Pin it on the map</span>
         <div id="pick-map" class="pick-map" aria-labelledby="pin-label"></div>
-        <p class="pick-status" id="pick-status">Tap the map where people should meet.</p>
+        <p class="pick-status${game ? ' done' : ''}" id="pick-status">${game ? 'Tap the map to move the pin.' : 'Tap the map where people should meet.'}</p>
       </div>
       <div class="field">
         <label for="f-desc">Anything else? <span class="tag">(optional)</span></label>
-        <textarea id="f-desc" name="description" maxlength="500" placeholder="All levels welcome. Bring a light and a dark shirt."></textarea>
+        <textarea id="f-desc" name="description" maxlength="500" placeholder="All levels welcome. Bring a light and a dark shirt.">${esc(v.description)}</textarea>
       </div>
-      <button type="submit" class="button">Post game</button>
+      <button type="submit" class="button">${editing ? 'Save changes' : 'Post game'}</button>
     </form>`;
 
     let pin = null;
-    const map = makeMap(document.getElementById('pick-map')).setView(WOLLONGONG, 12);
+    const map = makeMap(document.getElementById('pick-map')).setView(game ? [game.location.lat, game.location.lng] : WOLLONGONG, game ? 15 : 12);
+    if (game) pin = L.marker([game.location.lat, game.location.lng], { title: 'Meeting point' }).addTo(map);
     map.on('click', (event) => {
       if (pin) pin.setLatLng(event.latlng);
       else pin = L.marker(event.latlng, { title: 'Meeting point' }).addTo(map);
@@ -682,25 +791,28 @@
       if (problems.length) return showErrors(errorsEl, problems);
 
       const { lat, lng } = pin.getLatLng();
+      const body = {
+        title: f.title.value,
+        sport: f.sport.value,
+        capacity: Number(f.capacity.value),
+        startsAt: new Date(f.startsAt.value).toISOString(),
+        durationMinutes: Number(f.durationMinutes.value),
+        description: f.description.value,
+        location: { name: f.place.value, lat, lng },
+      };
+      // When editing, an unchanged start time is sent as the original exact time,
+      // so a game that has already started can still have its details fixed
+      if (game && f.startsAt.value === startValue) body.startsAt = game.startsAt;
+
       const seq = routeSeq;
-      const res = await api('/games', {
-        method: 'POST',
-        body: {
-          title: f.title.value,
-          sport: f.sport.value,
-          capacity: Number(f.capacity.value),
-          startsAt: new Date(f.startsAt.value).toISOString(),
-          description: f.description.value,
-          location: { name: f.place.value, lat, lng },
-        },
-      });
+      const res = await api(editing ? `/games/${game.id}` : '/games', { method: editing ? 'PATCH' : 'POST', body });
 
       if (!res.ok) {
         const list = res.data.errors || [res.data.error || 'Something went wrong. Try again.'];
         const extra = res.data.gameIds ? '<p><a href="#/me">See my games</a></p>' : '';
         return showErrors(errorsEl, list, extra);
       }
-      toast('Game posted.');
+      toast(editing ? 'Changes saved.' : 'Game posted.');
       if (!isStale(seq)) location.hash = `#/game/${res.data.id}`; // don't move someone who has already left
     });
   }
@@ -726,13 +838,17 @@
       else a.removeAttribute('aria-current');
     });
 
+    const editMatch = hash.match(/^\/game\/([^/]+)\/edit$/);
     const gameMatch = hash.match(/^\/game\/([^/]+)$/);
-    if (gameMatch) {
+    if (editMatch) {
+      document.body.classList.add('on-form');
+      await formView(decodeURIComponent(editMatch[1]));
+    } else if (gameMatch) {
       document.body.classList.add('on-detail');
       await detailView(decodeURIComponent(gameMatch[1]));
     } else if (hash === '/new') {
       document.body.classList.add('on-form');
-      formView();
+      await formView();
     } else if (hash === '/map') {
       await mapView();
     } else if (hash === '/me') {
@@ -753,6 +869,28 @@
     if (await requireSignIn('Sign in to GongGo')) {
       toast("You're signed in.");
       route();
+    }
+  });
+
+  accountButton().addEventListener('click', () => {
+    if (accountButton().getAttribute('aria-expanded') === 'true') closeAccountMenu();
+    else openAccountMenu();
+  });
+  // Close on Escape (back to the button), on a click elsewhere, or after choosing
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAccountMenu({ focusButton: true });
+  });
+  document.addEventListener('click', (event) => {
+    if (!document.getElementById('account').contains(event.target)) closeAccountMenu();
+  });
+  accountMenu().querySelector('a').addEventListener('click', () => closeAccountMenu());
+  document.getElementById('menu-sign-out').addEventListener('click', signOutNow);
+  document.getElementById('menu-rename').addEventListener('click', async () => {
+    closeAccountMenu();
+    if (await askName({ current: (profile && profile.name) || '' })) {
+      renderTopbar();
+      toast('Name changed.');
+      route(); // redraw so "(you)" labels pick up the new name
     }
   });
 

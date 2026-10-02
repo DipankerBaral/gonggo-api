@@ -20,6 +20,10 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must always win. Without this, any rule like
+   "display: grid" quietly overrides it and "hidden" things stay on screen. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -664,3 +668,78 @@ dialog p { margin: 0 0 1rem; color: var(--ink-soft); }
 
 .comment-form textarea { min-height: 4rem; }
 .comment-form .button { margin-top: 0.5rem; }
+
+/* ---------- Batch 1: on now, sharing, removing ---------- */
+
+.status-tag.on-now { color: var(--foam); background: var(--sea); border-color: var(--sea); }
+.on-now-banner { margin: -0.5rem 0 1rem; display: flex; gap: 0.5rem; align-items: center; color: var(--ink-soft); }
+.on-now-banner .status-tag { margin-top: 0; }
+.share-button { margin-top: 1rem; }
+.remove-player { margin-left: 0.4rem; font-size: 0.85rem; color: var(--flag-red-text); }
+.action-bar a.button { flex: 1; }
+
+/* ---------- Account menu ---------- */
+
+.account { position: relative; }
+
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 8rem;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+#account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: underline; text-underline-offset: 4px; }
+
+/* A small down arrow that flips when the menu is open */
+.caret {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid currentColor;
+  transition: transform 150ms;
+}
+.account-button[aria-expanded="true"] .caret { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .caret { transition: none; } }
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 1100;
+  display: grid;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--foam);
+  box-shadow: 0 8px 24px rgba(18, 49, 59, 0.2);
+}
+
+.account-menu a,
+.account-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-menu a:hover,
+.account-menu button:hover { background: var(--spray); }
+.account-menu a[aria-current="page"] { color: var(--sea); }
+#menu-sign-out { color: var(--flag-red-text); border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; }

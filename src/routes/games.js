@@ -1,8 +1,9 @@
 const express = require('express');
 const store = require('../store');
 const { requireUser } = require('../middleware/auth');
-const { validateGame, fallbackName } = require('../validation');
-const { isUpcoming, toPublic } = require('../gameHelpers');
+const { validateGame, validateGameEdit, fallbackName } = require('../validation');
+const { isOver, toPublic } = require('../gameHelpers');
+const limits = require('../middleware/rateLimit');
 const { MAX_ACTIVE_GAMES } = require('../constants');
 const ah = require('../asyncHandler');
 
@@ -24,7 +25,7 @@ router.get('/:id', ah(async (req, res) => {
   res.json({ ...toPublic(game), players: players.map((p) => ({ id: p.id, name: p.name || fallbackName(p.id) })) });
 }));
 
-router.post('/', requireUser, ah(async (req, res) => {
+router.post('/', requireUser, limits.postGameLimit, ah(async (req, res) => {
   const { errors, value } = validateGame(req.body);
   if (errors.length) return res.status(400).json({ errors });
 
@@ -38,10 +39,14 @@ router.post('/', requireUser, ah(async (req, res) => {
   res.status(201).json(toPublic(game));
 }));
 
-router.post('/:id/join', requireUser, ah(async (req, res) => {
+router.post('/:id/join', requireUser, limits.joinLeaveLimit, ah(async (req, res) => {
   const game = await store.getGame(req.params.id);
   if (!game || game.status !== 'open') return res.status(404).json({ error: 'Game not found' });
-  if (!isUpcoming(game)) return res.status(409).json({ error: 'This game has already started' });
+  // Joining late is fine (people turn up 10 minutes in); joining a finished game isn't
+  if (isOver(game)) return res.status(409).json({ error: 'This game has finished' });
+  if (await store.wasRemovedFrom(game.id, req.userId)) {
+    return res.status(403).json({ error: 'The host has removed you from this game.' });
+  }
   if (game.players.includes(req.userId)) return res.status(409).json({ error: 'You have already joined this game' });
 
   try {
@@ -55,7 +60,7 @@ router.post('/:id/join', requireUser, ah(async (req, res) => {
   }
 }));
 
-router.delete('/:id/join', requireUser, ah(async (req, res) => {
+router.delete('/:id/join', requireUser, limits.joinLeaveLimit, ah(async (req, res) => {
   const game = await store.getGame(req.params.id);
   if (!game || game.status !== 'open') return res.status(404).json({ error: 'Game not found' });
   if (game.hostId === req.userId) {
@@ -64,6 +69,35 @@ router.delete('/:id/join', requireUser, ah(async (req, res) => {
   if (!game.players.includes(req.userId)) return res.status(409).json({ error: 'You are not in this game' });
 
   res.json(toPublic(await store.removePlayer(game.id, req.userId)));
+}));
+
+// Host edits their game: PATCH with just the fields that change
+router.patch('/:id', requireUser, limits.editGameLimit, ah(async (req, res) => {
+  const game = await store.getGame(req.params.id);
+  if (!game || game.status === 'removed') return res.status(404).json({ error: 'Game not found' });
+  if (game.hostId !== req.userId) return res.status(403).json({ error: 'Only the host can edit this game' });
+  if (game.status === 'cancelled') return res.status(409).json({ error: 'This game was cancelled' });
+  if (isOver(game)) return res.status(409).json({ error: 'This game has finished' });
+
+  const { errors, value, changed } = validateGameEdit(req.body, game);
+  if (errors.length) return res.status(400).json({ errors });
+
+  const updated = await store.updateGameDetails(game.id, value);
+  res.json({ ...toPublic(updated), changed }); // `changed` will drive notifications in batch 3
+}));
+
+// Host removes someone from their game (no-shows, trouble). They can't rejoin.
+router.delete('/:id/players/:userId', requireUser, limits.editGameLimit, ah(async (req, res) => {
+  const game = await store.getGame(req.params.id);
+  if (!game || game.status === 'removed') return res.status(404).json({ error: 'Game not found' });
+  if (game.hostId !== req.userId) return res.status(403).json({ error: 'Only the host can remove players' });
+  if (req.params.userId === game.hostId) {
+    return res.status(400).json({ error: "Hosts can't remove themselves; cancel the game instead" });
+  }
+  if (!game.players.includes(req.params.userId)) return res.status(404).json({ error: 'That person is not in this game' });
+
+  await store.removePlayerByHost(game.id, req.params.userId);
+  res.json(toPublic(await store.getGame(game.id)));
 }));
 
 // Host cancels their game
@@ -76,7 +110,7 @@ router.delete('/:id', requireUser, ah(async (req, res) => {
 }));
 
 // Anyone can flag a game for the admin to look at
-router.post('/:id/report', requireUser, ah(async (req, res) => {
+router.post('/:id/report', requireUser, limits.reportLimit, ah(async (req, res) => {
   const game = await store.getGame(req.params.id);
   if (!game || game.status === 'removed') return res.status(404).json({ error: 'Game not found' });
 

@@ -17,7 +17,8 @@ test.describe('Joining a game', () => {
     await expect(page.getByTestId('spots-left')).toHaveText('4 spots left');
     await expect(page.getByRole('button', { name: 'Leave game' })).toBeVisible();
 
-    // Signed in now: the top bar shows My games, and the game is in it
+    // Signed in now: the top bar shows their name, and My games has the game
+    await page.getByRole('button', { name: 'Jordan' }).click();
     await page.getByRole('link', { name: 'My games' }).click();
     await expect(page.getByText('Playing as Jordan')).toBeVisible();
     await expect(page.getByTestId('upcoming-games')).toContainText(game.title);
@@ -91,7 +92,7 @@ test.describe('Joining a game', () => {
     const game = await res.json();
 
     await page.goto(`/#/game/${game.id}`);
-    await expect(page.getByText("You're hosting.")).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Edit game' })).toBeVisible(); // hosts get Edit and Cancel
     page.once('dialog', (d) => d.accept()); // the "are you sure?" confirm
     await page.getByRole('button', { name: 'Cancel game' }).click();
     await expect(page.getByText('This game was cancelled.')).toBeVisible();

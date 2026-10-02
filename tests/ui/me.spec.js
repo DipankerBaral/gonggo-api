@@ -31,8 +31,10 @@ test.describe('My games', () => {
     await page.request.post(`/games/${joined.id}/join`, { headers: { 'x-user-id': me.id } });
 
     await page.goto('/');
+    await page.getByRole('button', { name: 'Kai' }).click();
     await page.getByRole('link', { name: 'My games' }).click();
-    await expect(page.getByRole('link', { name: 'My games' })).toHaveAttribute('aria-current', 'page');
+    // The menu has closed, so check the link directly rather than by role
+    await expect(page.locator('#account-menu a[data-view="me"]')).toHaveAttribute('aria-current', 'page');
 
     const upcoming = page.getByTestId('upcoming-games');
     await expect(upcoming.getByTestId('game-row').filter({ hasText: hosting })).toContainText("You're hosting");
