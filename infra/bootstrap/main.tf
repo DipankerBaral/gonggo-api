@@ -149,6 +149,7 @@ data "aws_iam_policy_document" "deploy" {
       "rds:*",
       "logs:*",
       "application-autoscaling:*",
+      "cognito-idp:*",
     ]
     resources = ["*"]
   }
