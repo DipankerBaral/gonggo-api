@@ -31,12 +31,14 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.db.id]
   publicly_accessible    = false
 
-  # Grows by itself (20 GB up to 50 GB) rather than the app breaking when full
-  max_allocated_storage = 50
+  # Grows by itself (20 GB up to 50 GB) rather than the app breaking when full.
+  # Not allowed on the AWS Free plan (0 = off).
+  max_allocated_storage = var.aws_free_plan ? 0 : 50
 
-  # Daily backups kept for a week, which also allows point-in-time recovery:
-  # restoring the database to any minute in the last 7 days (see README).
-  backup_retention_period = 7
+  # Daily backups, which also allow point-in-time recovery: restoring the
+  # database to any minute within the retention period (see README).
+  # The Free plan allows 1 day; a paid plan, 7.
+  backup_retention_period = var.aws_free_plan ? 1 : 7
   backup_window           = "16:00-16:30"         # 2:00am Sydney (AEST), when nobody's playing
   maintenance_window      = "sun:17:00-sun:17:30" # 3:00am Sunday Sydney: minor updates
   copy_tags_to_snapshot   = true

@@ -159,8 +159,10 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 
 Production data is protected by default (`protect_data` in `infra/variables.tf`):
 
-- **The database** has deletion protection, daily backups kept for 7 days, and point-in-time
-  recovery. Deleting it on purpose leaves a final snapshot, `gonggo-db-final`.
+- **The database** has deletion protection, daily backups, and point-in-time recovery.
+  Deleting it on purpose leaves a final snapshot, `gonggo-db-final`. Backups are kept for
+  **1 day** while the AWS account is on the Free plan (its limit), and **7 days** after
+  upgrading the account and setting `aws_free_plan = false` in `infra/variables.tf`.
 - **Cognito** (the accounts) has deletion protection. It has no backups, which is why this matters.
 
 ### Restore the database to a point in time
@@ -189,3 +191,13 @@ in Parameter Store and redeploy) or copy the rows you need back.
 1. Set the repo variable `PROTECT_DATA` to `false`.
 2. Run **Actions → CI → Run workflow** so protection is switched off.
 3. Run **Actions → Destroy AWS infrastructure**. While protection is on, it refuses.
+
+## Monitoring
+
+CloudWatch alarms (`infra/monitoring.tf`) email the address in the repo variable `ALERT_EMAIL`
+when GongGo is down, returning server errors, slow, logging unexpected errors, or when the
+containers or database are struggling, and again when things recover. AWS sends a confirmation
+email first: click its link or no alerts arrive.
+
+- Dashboard: `terraform output -raw dashboard_url`
+- Send a test alert: `terraform output -raw test_alarm_command` (copy and run it)

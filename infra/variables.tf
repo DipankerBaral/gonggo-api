@@ -74,3 +74,22 @@ variable "protect_data" {
   type        = bool
   default     = true
 }
+
+# ---- Alerts
+
+variable "alert_email" {
+  description = "Where alarm emails go. Set the repo variable ALERT_EMAIL; AWS emails a confirmation link first."
+  type        = string
+  default     = ""
+}
+
+variable "aws_free_plan" {
+  description = <<-EOT
+    True while the AWS account is on the Free plan, which limits RDS: backups
+    can only be kept for 1 day, and storage can't grow automatically. After
+    upgrading the account to a paid plan, set this to false for 7-day backups
+    and storage autoscaling.
+  EOT
+  type        = bool
+  default     = true
+}
