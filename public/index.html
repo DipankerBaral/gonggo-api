@@ -23,7 +23,8 @@
       <a href="#/" data-view="list">List</a>
       <a href="#/map" data-view="map">Map</a>
     </nav>
-    <button type="button" class="me" id="me-button" hidden></button>
+    <a href="#/me" class="me" data-view="me" id="me-link" hidden>My games</a>
+    <button type="button" class="me sign-in-button" id="sign-in-button" hidden>Sign in</button>
   </header>
 
   <main id="app" tabindex="-1"></main>
@@ -32,12 +33,22 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <dialog id="signin-dialog" aria-labelledby="signin-title">
+    <h2 id="signin-title">Sign in</h2>
+    <p>Anyone can browse games. Sign in to join, post and comment.</p>
+    <div id="signin-options"></div>
+    <div class="dialog-actions">
+      <button type="button" class="button quiet" id="signin-cancel">Not now</button>
+    </div>
+  </dialog>
+
   <dialog id="name-dialog" aria-labelledby="name-title">
     <form method="dialog" id="name-form">
-      <h2 id="name-title">What's your first name?</h2>
-      <p>Hosts see this when you join. No sign-up needed for now.</p>
+      <h2 id="name-title">What should other players call you?</h2>
+      <p>Your first name is enough. Hosts and players see it.</p>
       <label for="name-input">First name</label>
-      <input id="name-input" name="name" autocomplete="given-name" required maxlength="30">
+      <input id="name-input" name="name" autocomplete="given-name" required maxlength="30" aria-describedby="name-error">
+      <p id="name-error" class="field-error" hidden>Use letters, like Sam or Priya.</p>
       <div class="dialog-actions">
         <button type="button" class="button quiet" id="name-cancel">Not now</button>
         <button type="submit" class="button">Save name</button>
@@ -46,6 +57,7 @@
   </dialog>
 
   <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/auth.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -76,10 +76,20 @@ Postgres 16. Migrations live in `src/db/migrations` and run automatically on sta
 (or `npm run migrate`). To change the schema, add a new numbered `.sql` file; never edit one
 that has already run.
 
-## Auth (temporary)
+## Sign-in
 
-Send `x-user-id: <any name>` to act as a user and `x-admin-key: <ADMIN_KEY>` for admin routes.
-Real logins come later in the roadmap.
+Anyone can browse games. Joining, posting, commenting and My games need an account.
+
+- **On AWS:** Amazon Cognito (email and password, plus Google and Apple when configured).
+  The browser uses the OAuth code + PKCE flow; the API checks Cognito's signed ID token
+  (`Authorization: Bearer ...`) on every request. GongGo never sees a password.
+- **On your laptop and in tests:** dev sign-in. Type a first name, or send `x-user-id`
+  (and optionally `x-user-name`) headers. The server refuses this mode in production
+  unless `ALLOW_DEV_AUTH=true` is set on purpose, which docker-compose and CI do and AWS never does.
+- **Admin routes:** `x-admin-key: <ADMIN_KEY>`.
+
+To turn on Google or Apple sign-in, see `infra/auth.tf`. Cognito only accepts `https://`
+return addresses (plus `http://localhost`), so real sign-in on AWS needs a domain with HTTPS.
 
 ## Endpoints
 
@@ -88,11 +98,18 @@ Real logins come later in the roadmap.
 | GET | /health | anyone | health check |
 | GET | /games?sport=&hasSpots=true | anyone | upcoming open games, soonest first |
 | GET | /games/:id | anyone | one game with its players |
-| POST | /games | user | post a game (one active game per person) |
+| POST | /games | user | post a game (up to two upcoming games per person) |
 | POST | /games/:id/join | user | take a spot |
 | DELETE | /games/:id/join | user | give your spot back |
 | DELETE | /games/:id | host | cancel your game |
 | POST | /games/:id/report | user | flag a game for the admin |
+| GET | /me/games | user | games I host or joined: upcoming, plus the last 30 days |
+| GET | /me | user | my profile (`name` is null until chosen) |
+| PATCH | /me | user | choose or change my name (`{"name": "Sam"}`) |
+| GET | /games/:id/comments | player | the game's comments, oldest first |
+| POST | /games/:id/comments | player | post a comment (`{"body": "..."}`, up to 500 characters) |
+| DELETE | /games/:id/comments/:commentId | author or host | delete a comment |
+| GET | /config | anyone | what the browser needs to start sign-in (no secrets) |
 | GET | /admin/games | admin | all games, most-reported first |
 | GET | /admin/reports | admin | all reports |
 | POST | /admin/games/:id/remove | admin | take a game down (`{"reason": "..."}`) |
@@ -101,9 +118,10 @@ Real logins come later in the roadmap.
 
 ## Rules
 
-- One active game per person (open or awaiting payment, and not yet started).
+- Up to two upcoming games per host (open or awaiting payment, and not yet started).
 - Locations must be inside the Illawarra region.
 - Tournaments start as `pending_payment` and stay hidden until approved (Stripe comes later).
 - Hosts take the first spot and can't leave their own game, only cancel it.
+- Comments are visible only to the game's players and host.
 - Joining and posting are safe under concurrency: row locks stop two people taking the last
   spot, and an advisory lock stops one person double-posting.

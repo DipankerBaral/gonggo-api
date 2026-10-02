@@ -1,8 +1,9 @@
 const express = require('express');
 const store = require('../store');
 const { requireUser } = require('../middleware/auth');
-const { validateGame } = require('../validation');
+const { validateGame, fallbackName } = require('../validation');
 const { isUpcoming, toPublic } = require('../gameHelpers');
+const { MAX_ACTIVE_GAMES } = require('../constants');
 const ah = require('../asyncHandler');
 
 const router = express.Router();
@@ -19,18 +20,19 @@ router.get('/', ah(async (req, res) => {
 router.get('/:id', ah(async (req, res) => {
   const game = await store.getGame(req.params.id);
   if (!game || game.status === 'removed') return res.status(404).json({ error: 'Game not found' });
-  res.json({ ...toPublic(game), players: game.players });
+  const players = await store.listPlayersWithNames(game.id);
+  res.json({ ...toPublic(game), players: players.map((p) => ({ id: p.id, name: p.name || fallbackName(p.id) })) });
 }));
 
 router.post('/', requireUser, ah(async (req, res) => {
   const { errors, value } = validateGame(req.body);
   if (errors.length) return res.status(400).json({ errors });
 
-  const { game, existingId } = await store.createGameIfNoActive({ ...value, hostId: req.userId });
-  if (existingId) {
+  const { game, activeIds } = await store.createGameIfUnderLimit({ ...value, hostId: req.userId }, MAX_ACTIVE_GAMES);
+  if (activeIds) {
     return res.status(409).json({
-      error: 'You already have an active game. Cancel it or wait until it has started before posting another.',
-      gameId: existingId,
+      error: `You already have ${MAX_ACTIVE_GAMES} upcoming games. Cancel one, or wait until one has started, before posting another.`,
+      gameIds: activeIds,
     });
   }
   res.status(201).json(toPublic(game));

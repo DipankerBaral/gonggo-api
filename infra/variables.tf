@@ -27,3 +27,38 @@ variable "seed_sample_games" {
   type        = bool
   default     = true
 }
+
+# ---- Sign-in
+
+variable "app_urls" {
+  description = "HTTPS addresses of the app (with a trailing slash) that Cognito may return people to, e.g. [\"https://gonggo.app/\"]"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for u in var.app_urls : startswith(u, "https://")])
+    error_message = "Cognito only accepts https:// addresses here (http://localhost is added automatically)."
+  }
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client ID. Leave empty to turn off Google sign-in."
+  type        = string
+  default     = ""
+}
+
+variable "apple_services_id" {
+  description = "Apple Services ID for Sign in with Apple. Leave empty to turn off Apple sign-in."
+  type        = string
+  default     = ""
+}
+
+variable "apple_team_id" {
+  type    = string
+  default = ""
+}
+
+variable "apple_key_id" {
+  type    = string
+  default = ""
+}

@@ -47,4 +47,21 @@ function validateGame(body) {
   };
 }
 
-module.exports = { validateGame };
+// A display name: 1-30 characters with at least one letter ("Sam", not "4333")
+function validateName(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  if (!name || name.length > 30) return { error: 'name must be 1-30 characters' };
+  if (!/\p{L}/u.test(name)) return { error: 'name must include at least one letter' };
+  return { name };
+}
+
+// For people without a chosen name yet (and the sample games):
+// "seed-priya" -> "Priya", "sam-3f2a" -> "Sam"
+function fallbackName(userId) {
+  const base = String(userId).replace(/^seed-/, '').replace(/-[0-9a-f]{4,12}$/, '');
+  if (!/^[a-z][a-z -]*$/i.test(base) || base.length > 20) return 'Player';
+  const word = base.replace(/-/g, ' ');
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+module.exports = { validateGame, validateName, fallbackName };

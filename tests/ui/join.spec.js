@@ -1,25 +1,44 @@
 const { test, expect, signInAs, uniqueTitle, newUser, createGame } = require('./fixtures');
 
 test.describe('Joining a game', () => {
-  test('a first-time visitor is asked their name, then joins', async ({ page, request }) => {
+  test('a signed-out visitor is asked to sign in, then joins', async ({ page, request }) => {
     const game = await createGame(request, newUser('host'), { title: uniqueTitle('Touch footy'), capacity: 6 });
 
     await page.goto(`/#/game/${game.id}`);
     await page.getByRole('button', { name: 'Join game' }).click();
 
-    const dialog = page.getByRole('dialog', { name: "What's your first name?" });
+    const dialog = page.getByRole('dialog', { name: 'Sign in to join this game' });
     await expect(dialog).toBeVisible();
     await dialog.getByLabel('First name').fill('Jordan');
-    await dialog.getByRole('button', { name: 'Save name' }).click();
+    await dialog.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page.getByRole('status')).toHaveText("You're in.");
     await expect(page.getByTestId('players')).toContainText('Jordan (you)');
     await expect(page.getByTestId('spots-left')).toHaveText('4 spots left');
     await expect(page.getByRole('button', { name: 'Leave game' })).toBeVisible();
 
-    // The name is remembered for next time
-    await page.reload();
-    await expect(page.getByRole('button', { name: /Signed in as Jordan/ })).toBeVisible();
+    // Signed in now: the top bar shows My games, and the game is in it
+    await page.getByRole('link', { name: 'My games' }).click();
+    await expect(page.getByText('Playing as Jordan')).toBeVisible();
+    await expect(page.getByTestId('upcoming-games')).toContainText(game.title);
+  });
+
+  test('a name needs at least one letter', async ({ page, request }) => {
+    const game = await createGame(request, newUser('host'), { title: uniqueTitle('Name check'), capacity: 6 });
+
+    await page.goto(`/#/game/${game.id}`);
+    await page.getByRole('button', { name: 'Join game' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('First name').fill('4333333333');
+    await dialog.getByRole('button', { name: 'Sign in' }).click();
+
+    await expect(dialog.getByText('Use letters, like Sam or Priya.')).toBeVisible();
+    await expect(dialog.getByLabel('First name')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByTestId('spots-left')).toHaveText('5 spots left'); // nobody joined
+
+    await dialog.getByLabel('First name').fill('Sam');
+    await dialog.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByRole('status')).toHaveText("You're in.");
   });
 
   test('choosing "Not now" leaves the game untouched', async ({ page, request }) => {
@@ -31,6 +50,7 @@ test.describe('Joining a game', () => {
 
     await expect(page.getByRole('dialog')).toBeHidden();
     await expect(page.getByTestId('spots-left')).toHaveText('3 spots left');
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible(); // still signed out
   });
 
   test('leaving gives the spot back', async ({ page, request }) => {

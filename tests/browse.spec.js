@@ -67,7 +67,7 @@ test.describe('Browsing games', () => {
     await request.post(`/games/${game.id}/join`, { headers: asUser(player) });
 
     const detail = await (await request.get(`/games/${game.id}`)).json();
-    expect(detail.players).toEqual([host, player]);
+    expect(detail.players.map((p) => p.id)).toEqual([host, player]);
   });
 
   test('unknown game returns 404', async ({ request }) => {

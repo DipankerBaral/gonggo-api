@@ -20,7 +20,13 @@ const REGION_BOUNDS = {
   maxLng: 151.05,
 };
 
+// How many upcoming games one person can host at once
+const MAX_ACTIVE_GAMES = 2;
+
+// How far back "My games" shows games you played in
+const HISTORY_DAYS = 30;
+
 const MIN_CAPACITY = 2;
 const MAX_CAPACITY = 100;
 
-module.exports = { SPORTS, REGION_BOUNDS, MIN_CAPACITY, MAX_CAPACITY };
+module.exports = { SPORTS, REGION_BOUNDS, MIN_CAPACITY, MAX_CAPACITY, MAX_ACTIVE_GAMES, HISTORY_DAYS };

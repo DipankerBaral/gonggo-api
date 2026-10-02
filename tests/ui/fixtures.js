@@ -16,10 +16,10 @@ const test = base.test.extend({
   },
 });
 
-// Pretend this browser has already told GongGo its name
+// Start the test already signed in (dev sign-in mode, as on a laptop)
 async function signInAs(page, name) {
   const user = { id: `${name.toLowerCase()}-${Math.random().toString(16).slice(2, 6).padEnd(4, '0')}`, name };
-  await page.addInitScript((u) => localStorage.setItem('gonggo:user', JSON.stringify(u)), user);
+  await page.addInitScript((u) => localStorage.setItem('gonggo:session', JSON.stringify(u)), user);
   return user;
 }
 

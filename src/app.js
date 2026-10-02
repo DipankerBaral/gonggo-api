@@ -3,6 +3,9 @@ const express = require('express');
 const { pool } = require('./db/pool');
 const gamesRouter = require('./routes/games');
 const adminRouter = require('./routes/admin');
+const meRouter = require('./routes/me');
+const commentsRouter = require('./routes/comments');
+const auth = require('./auth');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -18,8 +21,13 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// What the browser needs to show sign-in (no secrets)
+app.get('/config', (req, res) => res.json({ auth: auth.publicConfig() }));
+
+app.use('/games/:id/comments', commentsRouter);
 app.use('/games', gamesRouter);
 app.use('/admin', adminRouter);
+app.use('/me', meRouter);
 
 // ---- The web app (UI) ----
 // Libraries come from npm packages rather than third-party CDNs, so the app

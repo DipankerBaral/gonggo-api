@@ -2,8 +2,10 @@ const config = require('./config');
 const app = require('./app');
 const { pool } = require('./db/pool');
 const { migrate } = require('./db/migrate');
+const { checkStartupSafety } = require('./auth');
 
 async function main() {
+  checkStartupSafety(); // never run with fake sign-in on a real server
   await migrate(); // bring the database schema up to date before serving traffic
   if (config.seed) await require('./seed')();
 

@@ -84,6 +84,12 @@ resource "aws_ecs_task_definition" "api" {
     environment = [
       { name = "PORT", value = "3000" },
       { name = "SEED", value = tostring(var.seed_sample_games) },
+      # Real sign-in: with these set, the API only accepts Cognito-signed tokens
+      { name = "AWS_REGION", value = var.aws_region },
+      { name = "COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.main.id },
+      { name = "COGNITO_CLIENT_ID", value = aws_cognito_user_pool_client.web.id },
+      { name = "COGNITO_DOMAIN", value = local.cognito_domain },
+      { name = "AUTH_PROVIDERS", value = join(",", concat(local.google_enabled ? ["google"] : [], local.apple_enabled ? ["apple"] : [])) },
     ]
 
     # Pulled from Parameter Store at start-up; never visible in the console

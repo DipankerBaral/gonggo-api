@@ -41,20 +41,20 @@ async function getGame(id, client = pool) {
   return rows[0] ? toGame(rows[0]) : null;
 }
 
-// Creates a game unless the host already has an active one.
+// Creates a game unless the host already has the maximum number of active ones.
 // The advisory lock stops the same person posting twice at the same instant
 // (e.g. double-tapping "Post"), which a simple check-then-insert would allow.
-async function createGameIfNoActive(data) {
+async function createGameIfUnderLimit(data, limit) {
   return withTransaction(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [data.hostId]);
 
     const existing = await client.query(
       `SELECT id FROM games
        WHERE host_id = $1 AND status IN ('open', 'pending_payment') AND starts_at > now()
-       LIMIT 1`,
+       ORDER BY starts_at`,
       [data.hostId],
     );
-    if (existing.rowCount) return { existingId: existing.rows[0].id };
+    if (existing.rowCount >= limit) return { activeIds: existing.rows.map((r) => r.id) };
 
     const status = data.type === 'tournament' ? 'pending_payment' : 'open';
     const { rows } = await client.query(
@@ -165,13 +165,97 @@ async function isBanned(userId) {
   return rowCount > 0;
 }
 
+// Games someone is hosting or has joined: everything upcoming, plus anything
+// that started in the last `days` days. Removed games are left out.
+async function listGamesForUser(userId, days) {
+  const { rows } = await pool.query(
+    `${GAME_SELECT}
+     WHERE EXISTS (SELECT 1 FROM game_players p WHERE p.game_id = g.id AND p.user_id = $1)
+       AND g.status <> 'removed'
+       AND g.starts_at > now() - make_interval(days => $2)
+     ORDER BY g.starts_at ASC`,
+    [userId, days],
+  );
+  return rows.map(toGame);
+}
+
+// ---- users
+
+// Makes sure a row exists for this person and returns it. A name they chose
+// is never overwritten; a missing one is filled in from their sign-in.
+async function ensureUser({ id, email, suggestedName }) {
+  const { rows } = await pool.query(
+    `INSERT INTO users (id, email, display_name) VALUES ($1, $2, $3)
+     ON CONFLICT (id) DO UPDATE SET
+       email = COALESCE(EXCLUDED.email, users.email),
+       display_name = COALESCE(users.display_name, EXCLUDED.display_name)
+     RETURNING id, display_name AS name, email`,
+    [id, email, suggestedName],
+  );
+  return rows[0];
+}
+
+async function setDisplayName(id, name) {
+  const { rows } = await pool.query(
+    `UPDATE users SET display_name = $2, updated_at = now() WHERE id = $1
+     RETURNING id, display_name AS name, email`,
+    [id, name],
+  );
+  return rows[0] || null;
+}
+
+// The players in a game with their chosen names, in the order they joined
+async function listPlayersWithNames(gameId) {
+  const { rows } = await pool.query(
+    `SELECT p.user_id AS id, u.display_name AS name
+     FROM game_players p LEFT JOIN users u ON u.id = p.user_id
+     WHERE p.game_id = $1 ORDER BY p.joined_at`,
+    [gameId],
+  );
+  return rows;
+}
+
+// ---- comments
+
+async function listComments(gameId) {
+  const { rows } = await pool.query(
+    `SELECT c.id, c.user_id AS "userId", u.display_name AS "authorName", c.body, c.created_at AS "createdAt"
+     FROM comments c LEFT JOIN users u ON u.id = c.user_id
+     WHERE c.game_id = $1 ORDER BY c.created_at`,
+    [gameId],
+  );
+  return rows;
+}
+
+async function addComment(gameId, userId, body) {
+  const { rows } = await pool.query(
+    `INSERT INTO comments (game_id, user_id, body) VALUES ($1, $2, $3)
+     RETURNING id, user_id AS "userId", body, created_at AS "createdAt"`,
+    [gameId, userId, body],
+  );
+  return rows[0];
+}
+
+async function getComment(gameId, commentId) {
+  if (!isUuid(commentId)) return null;
+  const { rows } = await pool.query(
+    'SELECT id, user_id AS "userId" FROM comments WHERE game_id = $1 AND id = $2', [gameId, commentId]);
+  return rows[0] || null;
+}
+
+async function deleteComment(commentId) {
+  await pool.query('DELETE FROM comments WHERE id = $1', [commentId]);
+}
+
 async function countGames() {
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM games');
   return rows[0].n;
 }
 
 module.exports = {
-  getGame, createGameIfNoActive, listOpenGames, listAllGamesWithReports, setStatus,
+  getGame, createGameIfUnderLimit, listOpenGames, listGamesForUser, listAllGamesWithReports, setStatus,
   addPlayerIfSpace, removePlayer, hasReported, addReport, listReports,
   banUserAndRemoveGames, isBanned, countGames,
+  ensureUser, setDisplayName, listPlayersWithNames,
+  listComments, addComment, getComment, deleteComment,
 };

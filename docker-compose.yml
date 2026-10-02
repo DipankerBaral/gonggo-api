@@ -31,6 +31,15 @@ services:
       # Inside Docker's network, the API reaches Postgres by its service name "db"
       # on the container port 5432 (not localhost:5433, which is your machine's view).
       DATABASE_URL: postgres://gonggo:${POSTGRES_PASSWORD:-gonggo}@db:5432/gonggo
+      # Sign-in. With no Cognito settings, the app uses dev sign-in (type a name).
+      # The image runs with NODE_ENV=production, which refuses dev sign-in unless
+      # allowed on purpose: fine on your laptop and in CI, never on AWS.
+      # To try real sign-in locally, put the Terraform "local_env" output in .env.
+      ALLOW_DEV_AUTH: "true"
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:-}
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN:-}
+      AUTH_PROVIDERS: ${AUTH_PROVIDERS:-}
     restart: unless-stopped
 
 volumes:

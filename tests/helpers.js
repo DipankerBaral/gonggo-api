@@ -6,7 +6,8 @@ const ADMIN_KEY = process.env.ADMIN_KEY || 'dev-admin-key';
 // even when running in parallel or against a shared environment.
 const newUser = (label = 'user') => `${label}-${randomUUID().slice(0, 8)}`;
 
-const asUser = (userId) => ({ 'x-user-id': userId });
+// Dev sign-in: who the request is from (and, optionally, their first name)
+const asUser = (userId, name) => ({ 'x-user-id': userId, ...(name ? { 'x-user-name': name } : {}) });
 const asAdmin = () => ({ 'x-admin-key': ADMIN_KEY });
 
 function daysFromNow(days) {

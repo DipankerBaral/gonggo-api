@@ -1,6 +1,18 @@
 const { test, expect, uniqueTitle, newUser, createGame } = require('./fixtures');
 
 test.describe('Browsing games', () => {
+  test('anyone can browse and open games without signing in', async ({ page, request }) => {
+    const title = uniqueTitle('Open to all');
+    await createGame(request, newUser('host'), { title });
+
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await page.getByText(title).click();
+    await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Join game' })).toBeVisible();
+    await expect(page.getByTestId('comments-locked')).toHaveText('Join this game to see and post comments.');
+  });
+
   test('shows an upcoming game with its spots left', async ({ page, request }) => {
     const title = uniqueTitle('Beach volleyball');
     await createGame(request, newUser('host'), { title, sport: 'volleyball', capacity: 8 });
@@ -36,6 +48,27 @@ test.describe('Browsing games', () => {
     await expect(page.getByRole('button', { name: 'Basketball' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText(hoops)).toBeVisible();
     await expect(page.getByText(run)).toBeHidden();
+  });
+
+  // This one exists because a person found the bug, not a test: Playwright
+  // scrolls hidden elements into view by itself, so "click the chip" passed
+  // even though a mouse user could never reach it. So check what people see.
+  test('every sport filter is visible without scrolling on a desktop', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'On phones the filter row scrolls sideways by design');
+    await page.goto('/');
+    const filters = page.getByRole('toolbar', { name: 'Filter games' });
+    expect(await filters.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    for (const name of ['Has spots', 'All sports', 'Community event', 'Other']) {
+      await expect(page.getByRole('button', { name, exact: true })).toBeInViewport();
+    }
+  });
+
+  test('on a phone the filter row can be swiped to the last sport', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'Phones only');
+    await page.goto('/');
+    const filters = page.getByRole('toolbar', { name: 'Filter games' });
+    await filters.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    await expect(page.getByRole('button', { name: 'Other', exact: true })).toBeInViewport();
   });
 
   test('opens a game to see who is coming', async ({ page, request }) => {

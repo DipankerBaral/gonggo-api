@@ -45,6 +45,6 @@ const SAMPLES = [
 
 module.exports = async function seed() {
   if ((await store.countGames()) > 0) return;
-  for (const game of SAMPLES) await store.createGameIfNoActive(game);
+  for (const game of SAMPLES) await store.createGameIfUnderLimit(game, 1);
   console.log(`Seeded ${SAMPLES.length} sample games`);
 };

@@ -1,5 +1,5 @@
 const AxeBuilder = require('@axe-core/playwright').default;
-const { test, expect, uniqueTitle, newUser, createGame } = require('./fixtures');
+const { test, expect, signInAs, uniqueTitle, newUser, createGame } = require('./fixtures');
 
 // Automated accessibility checks (WCAG 2.1 A and AA) on each main screen.
 // They catch a good share of problems, like missing labels and low contrast,
@@ -27,7 +27,25 @@ test.describe('Accessibility', () => {
     await expectNoViolations(page);
   });
 
+  test('game page with comments, signed in', async ({ page, request }) => {
+    const me = await signInAs(page, 'Ally');
+    const game = await createGame(request, newUser('host'), { title: uniqueTitle('A11y comments') });
+    await page.request.post(`/games/${game.id}/join`, { headers: { 'x-user-id': me.id } });
+    await page.request.post(`/games/${game.id}/comments`, { headers: { 'x-user-id': me.id }, data: { body: 'See you there' } });
+    await page.goto(`/#/game/${game.id}`);
+    await expect(page.getByTestId('comments')).toBeVisible();
+    await expectNoViolations(page);
+  });
+
+  test('sign-in dialog', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expectNoViolations(page);
+  });
+
   test('post form', async ({ page }) => {
+    await signInAs(page, 'Poster');
     await page.goto('/#/new');
     await expect(page.getByRole('heading', { name: 'Post a game' })).toBeVisible();
     await expectNoViolations(page);

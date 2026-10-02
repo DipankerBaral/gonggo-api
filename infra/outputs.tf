@@ -30,3 +30,23 @@ output "ecs_cluster" {
 output "ecs_service" {
   value = aws_ecs_service.api.name
 }
+
+output "cognito_domain" {
+  description = "Cognito's sign-in pages"
+  value       = local.cognito_domain
+}
+
+output "cognito_google_redirect_uri" {
+  description = "Paste this into Google Cloud Console as an authorised redirect URI"
+  value       = "https://${local.cognito_domain}/oauth2/idpresponse"
+}
+
+output "local_env" {
+  description = "Put these lines in a .env file to use real sign-in with docker compose on your laptop"
+  value       = <<-EOT
+    COGNITO_USER_POOL_ID=${aws_cognito_user_pool.main.id}
+    COGNITO_CLIENT_ID=${aws_cognito_user_pool_client.web.id}
+    COGNITO_DOMAIN=${local.cognito_domain}
+    AUTH_PROVIDERS=${join(",", concat(local.google_enabled ? ["google"] : [], local.apple_enabled ? ["apple"] : []))}
+  EOT
+}

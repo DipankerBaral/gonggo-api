@@ -4,6 +4,7 @@
 //   #/map         the same games on a map
 //   #/game/<id>   one game: details, who's coming, join or leave
 //   #/new         post a game
+//   #/me          my games: hosting and joined, upcoming and the last 30 days
 (function () {
   'use strict';
 
@@ -27,6 +28,12 @@
   const app = document.getElementById('app');
   const state = { sport: '', hasSpots: false };
   let activeMaps = [];
+
+  // Every page change gets a number. Pages load data from the API, and if the
+  // person has already moved on by the time it arrives, that page must not
+  // draw itself over the new one (a slow response could overwrite the form).
+  let routeSeq = 0;
+  const isStale = (seq) => seq !== routeSeq;
 
   // ---------------------------------------------------------------- helpers
 
@@ -72,81 +79,142 @@
 
   // ---------------------------------------------------------------- the user
 
-  // No real accounts yet: a first name plus a short random tag, kept in this
-  // browser, sent to the API as x-user-id. Real logins come later.
-  function getUser() {
-    try {
-      return JSON.parse(localStorage.getItem('gonggo:user')) || null;
-    } catch {
-      return null;
-    }
+  const Auth = window.GongGoAuth;
+  let profile = null; // { id, name, email } from /me, once signed in
+
+  const validName = (name) => /\p{L}/u.test(String(name).trim());
+
+  function playerName(player) {
+    return profile && profile.id === player.id ? `${player.name} (you)` : player.name;
   }
 
-  function saveUser(name) {
-    const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'player';
-    const tag = Math.random().toString(16).slice(2, 6).padEnd(4, '0');
-    const user = { id: `${slug}-${tag}`, name: name.trim() };
-    try { localStorage.setItem('gonggo:user', JSON.stringify(user)); } catch { /* private mode */ }
-    renderMe();
-    return user;
+  async function loadProfile() {
+    profile = null;
+    if (!Auth.isSignedIn()) return null;
+    const res = await api('/me');
+    profile = res.ok ? res.data : null;
+    return profile;
   }
 
-  // "sam-3f2a" -> "Sam", "seed-priya" -> "Priya"
-  function displayName(userId) {
-    const me = getUser();
-    if (me && me.id === userId) return `${me.name} (you)`;
-    const base = String(userId).replace(/^seed-/, '').replace(/-[0-9a-f]{4}$/, '').replace(/-/g, ' ');
-    return base.charAt(0).toUpperCase() + base.slice(1);
+  function renderTopbar() {
+    document.getElementById('me-link').hidden = !profile;
+    document.getElementById('sign-in-button').hidden = !!profile;
   }
 
-  function renderMe() {
-    const button = document.getElementById('me-button');
-    const user = getUser();
-    button.hidden = !user;
-    if (user) {
-      button.textContent = user.name;
-      button.setAttribute('aria-label', `Signed in as ${user.name}. Change name`);
-    }
+  // Opens a dialog and resolves with the result of `setup` (or null on "Not now")
+  function openDialog(dialogId, cancelId, setup) {
+    const dialog = document.getElementById(dialogId);
+    return new Promise((resolve) => {
+      const done = (value) => {
+        cancel.removeEventListener('click', onCancel);
+        dialog.removeEventListener('cancel', onCancel);
+        if (dialog.open) dialog.close();
+        resolve(value);
+      };
+      const onCancel = (event) => { if (event) event.preventDefault(); done(null); };
+      const cancel = document.getElementById(cancelId);
+      cancel.addEventListener('click', onCancel);
+      dialog.addEventListener('cancel', onCancel); // Escape key
+      setup(done);
+      dialog.showModal();
+    });
   }
 
-  // Resolves with the user, asking for a name first if needed
-  function requireUser() {
-    const existing = getUser();
-    if (existing) return Promise.resolve(existing);
-
-    const dialog = document.getElementById('name-dialog');
+  // Ask for (or change) the name other players see. Resolves with the profile.
+  function askName({ current = '' } = {}) {
     const form = document.getElementById('name-form');
     const input = document.getElementById('name-input');
-    input.value = '';
+    const error = document.getElementById('name-error');
+    input.value = current;
+    error.hidden = true;
+    input.removeAttribute('aria-invalid');
 
-    return new Promise((resolve) => {
-      const done = (user) => {
-        form.removeEventListener('submit', onSubmit);
-        document.getElementById('name-cancel').removeEventListener('click', onCancel);
-        dialog.close();
-        resolve(user);
-      };
-      const onSubmit = (event) => {
+    return openDialog('name-dialog', 'name-cancel', (done) => {
+      form.onsubmit = async (event) => {
         event.preventDefault();
-        if (input.value.trim()) done(saveUser(input.value));
+        if (!validName(input.value)) {
+          error.hidden = false;
+          input.setAttribute('aria-invalid', 'true');
+          input.focus();
+          return;
+        }
+        const res = await api('/me', { method: 'PATCH', body: { name: input.value } });
+        if (!res.ok) { toast(errorText(res.data)); return; }
+        profile = res.data;
+        form.onsubmit = null;
+        done(profile);
       };
-      const onCancel = () => done(null);
-      form.addEventListener('submit', onSubmit);
-      document.getElementById('name-cancel').addEventListener('click', onCancel);
-      dialog.showModal();
-      input.focus();
+      setTimeout(() => input.focus());
     });
+  }
+
+  // The sign-in dialog. Real mode sends you to Cognito (the page navigates away
+  // and comes back signed in); dev mode signs you in with just a first name.
+  function showSignIn(title) {
+    document.getElementById('signin-title').textContent = title;
+    const options = document.getElementById('signin-options');
+
+    return openDialog('signin-dialog', 'signin-cancel', (done) => {
+      if (Auth.mode() === 'cognito') {
+        const providers = Auth.providers();
+        options.innerHTML = `<div class="signin-options">
+          ${providers.includes('google') ? '<button type="button" class="button provider" data-provider="Google">Continue with Google</button>' : ''}
+          ${providers.includes('apple') ? '<button type="button" class="button provider" data-provider="SignInWithApple">Continue with Apple</button>' : ''}
+          <button type="button" class="button" data-provider="">Continue with email</button>
+          <p class="signin-note">New to GongGo? You can create an account on the next screen.</p>
+        </div>`;
+        options.querySelectorAll('[data-provider]').forEach((b) =>
+          b.addEventListener('click', () => Auth.startSignIn(b.dataset.provider || undefined)));
+        return;
+      }
+
+      options.innerHTML = `<form id="dev-signin" class="signin-options" novalidate>
+        <span class="dev-badge">Dev mode: for local testing only</span>
+        <label for="dev-name">First name</label>
+        <input id="dev-name" autocomplete="given-name" maxlength="30" aria-describedby="dev-name-error">
+        <p id="dev-name-error" class="field-error" hidden>Use letters, like Sam or Priya.</p>
+        <button type="submit" class="button">Sign in</button>
+      </form>`;
+      const input = document.getElementById('dev-name');
+      document.getElementById('dev-signin').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!validName(input.value)) {
+          document.getElementById('dev-name-error').hidden = false;
+          input.setAttribute('aria-invalid', 'true');
+          input.focus();
+          return;
+        }
+        Auth.devSignIn(input.value);
+        await loadProfile();
+        renderTopbar();
+        done(profile);
+      });
+      setTimeout(() => input.focus());
+    });
+  }
+
+  // Resolves with the signed-in profile (with a name), or null if they backed out
+  async function requireSignIn(title = 'Sign in to GongGo') {
+    if (!profile) await showSignIn(title);
+    if (!profile) return null;
+    if (!profile.name) await askName();
+    return profile && profile.name ? profile : null;
   }
 
   // ---------------------------------------------------------------- the API
 
-  async function api(path, { method = 'GET', body, user } = {}) {
-    const headers = {};
+  async function api(path, { method = 'GET', body } = {}) {
+    const headers = await Auth.headers();
     if (body) headers['Content-Type'] = 'application/json';
-    if (user) headers['x-user-id'] = user.id;
     try {
       const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-      const data = await res.json().catch(() => ({}));
+      const data = res.status === 204 ? {} : await res.json().catch(() => ({}));
+      if (res.status === 401 && Auth.isSignedIn()) {
+        // The sign-in expired or was revoked: forget it
+        Auth.forget();
+        profile = null;
+        renderTopbar();
+      }
       return { ok: res.ok, status: res.status, data };
     } catch {
       return { ok: false, status: 0, data: { error: "Can't reach GongGo. Check your connection and try again." } };
@@ -224,6 +292,24 @@
     if (spots) spots.addEventListener('click', () => { state.hasSpots = !state.hasSpots; rerender(); });
   }
 
+  // One game in a list. My games also shows the date and a status tag.
+  function gameRowHtml(game, { withDate = false, tag = '' } = {}) {
+    const start = new Date(game.startsAt);
+    const { time, period } = timeParts(start);
+    const live = game.status === 'open' && start > new Date();
+    return `<li><a class="game" href="#/game/${esc(game.id)}" data-testid="game-row">
+      <div class="game-time">${time}<small>${period}</small></div>
+      <div>
+        <div class="game-sport">${esc(SPORTS[game.sport] || game.sport)}</div>
+        <h3 class="game-title">${esc(game.title)}</h3>
+        ${withDate ? `<div class="game-date">${esc(dayLabel(start))}</div>` : ''}
+        <div class="game-place">${esc(game.location.name)}</div>
+        ${tag}
+      </div>
+      ${live ? rosterHtml(game) : ''}
+    </a></li>`;
+  }
+
   async function loadGames() {
     const params = new URLSearchParams();
     if (state.sport) params.set('sport', state.sport);
@@ -235,7 +321,9 @@
 
   async function listView() {
     document.title = 'GongGo: pickup games around Wollongong';
+    const seq = routeSeq;
     const res = await loadGames();
+    if (isStale(seq)) return;
 
     if (!res.ok) {
       app.innerHTML = `${filtersHtml()}<div class="errors" role="alert">${esc(errorText(res.data))}</div>`;
@@ -261,20 +349,7 @@
       }
       body = groups.map((group) => `
         <h2 class="day">${dayLabel(group.date)}</h2>
-        <ul class="games">
-          ${group.games.map((game) => {
-            const { time, period } = timeParts(new Date(game.startsAt));
-            return `<li><a class="game" href="#/game/${esc(game.id)}" data-testid="game-row">
-              <div class="game-time">${time}<small>${period}</small></div>
-              <div>
-                <div class="game-sport">${esc(SPORTS[game.sport] || game.sport)}</div>
-                <h3 class="game-title">${esc(game.title)}</h3>
-                <div class="game-place">${esc(game.location.name)}</div>
-              </div>
-              ${rosterHtml(game)}
-            </a></li>`;
-          }).join('')}
-        </ul>`).join('');
+        <ul class="games">${group.games.map((game) => gameRowHtml(game)).join('')}</ul>`).join('');
     }
 
     app.innerHTML = `<h1 class="visually-hidden">Upcoming games</h1>${filtersHtml()}${body}`;
@@ -287,7 +362,9 @@
     app.innerHTML = `<h1 class="visually-hidden">Games on a map</h1><div id="big-map" class="big-map"></div>`;
 
     const map = makeMap(document.getElementById('big-map')).setView(WOLLONGONG, 12);
+    const seq = routeSeq;
     const res = await loadGames();
+    if (isStale(seq)) return;
     if (!res.ok) return toast(errorText(res.data));
 
     const markers = res.data.map((game) => {
@@ -303,7 +380,9 @@
   }
 
   async function detailView(id, { justJoined = false } = {}) {
+    const seq = routeSeq;
     const res = await api(`/games/${encodeURIComponent(id)}`);
+    if (isStale(seq)) return;
     if (!res.ok) {
       document.title = 'Game not found: GongGo';
       app.innerHTML = `<a class="back" href="#/">All games</a>
@@ -313,9 +392,9 @@
     }
 
     const game = res.data;
-    const me = getUser();
-    const isHost = me && me.id === game.hostId;
-    const isIn = me && game.players.includes(me.id);
+    const me = profile;
+    const isHost = !!me && me.id === game.hostId;
+    const isIn = !!me && game.players.some((p) => p.id === me.id);
     const started = new Date(game.startsAt) <= new Date();
     const cancelled = game.status === 'cancelled';
     document.title = `${game.title}: GongGo`;
@@ -341,9 +420,14 @@
       <h2>Who's coming</h2>
       ${rosterHtml(game, { large: true })}
       <ul class="players" data-testid="players">
-        ${game.players.map((p) => `<li>${esc(displayName(p))}${p === game.hostId ? ' <span class="tag">host</span>' : ''}</li>`).join('')}
+        ${game.players.map((p) => `<li>${esc(playerName(p))}${p.id === game.hostId ? ' <span class="tag">host</span>' : ''}</li>`).join('')}
       </ul>
       <div class="action-bar">${action}</div>
+      <section class="comments" aria-labelledby="comments-title">
+        <h2 id="comments-title">Comments</h2>
+        <div id="comments-body">${isIn ? '<p class="muted">Loading comments...</p>'
+          : '<p class="muted" data-testid="comments-locked">Join this game to see and post comments.</p>'}</div>
+      </section>
       ${!isHost && !cancelled ? `<details class="report">
         <summary>Report this game</summary>
         <form id="report-form">
@@ -366,14 +450,15 @@
     const button = app.querySelector('[data-action]');
     if (button) button.addEventListener('click', () => handleAction(button.dataset.action, game));
 
+    if (isIn) loadComments(game, seq);
+
     const report = document.getElementById('report-form');
     if (report) {
       report.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const user = await requireUser();
-        if (!user) return;
+        if (!(await requireSignIn('Sign in to report a game'))) return;
         const r = await api(`/games/${game.id}/report`, {
-          method: 'POST', user, body: { reason: document.getElementById('report-reason').value },
+          method: 'POST', body: { reason: document.getElementById('report-reason').value },
         });
         toast(r.ok ? 'Report sent. Thanks for keeping GongGo friendly.' : errorText(r.data));
         if (r.ok) report.closest('details').open = false;
@@ -381,26 +466,156 @@
     }
   }
 
+  // "5 minutes ago", "yesterday", or a date for anything older than a week
+  function ago(iso) {
+    const seconds = (new Date(iso) - new Date()) / 1000;
+    const rtf = new Intl.RelativeTimeFormat('en-AU', { numeric: 'auto' });
+    const abs = Math.abs(seconds);
+    if (abs < 60) return 'just now';
+    if (abs < 3600) return rtf.format(Math.round(seconds / 60), 'minute');
+    if (abs < 86400) return rtf.format(Math.round(seconds / 3600), 'hour');
+    if (abs < 7 * 86400) return rtf.format(Math.round(seconds / 86400), 'day');
+    return fmt({ day: 'numeric', month: 'short' }).format(new Date(iso));
+  }
+
+  async function loadComments(game, seq) {
+    const body = document.getElementById('comments-body');
+    const res = await api(`/games/${game.id}/comments`);
+    if (isStale(seq) || !body.isConnected) return;
+    if (!res.ok) {
+      body.innerHTML = `<p class="errors" role="alert">${esc(errorText(res.data))}</p>`;
+      return;
+    }
+
+    const list = res.data.length
+      ? `<ol class="comment-list" data-testid="comments">${res.data.map((c) => `<li class="comment">
+          <div class="comment-meta">
+            <strong>${esc(c.userId === profile.id ? `${c.authorName} (you)` : c.authorName)}</strong>
+            ${c.isHost ? '<span class="tag">host</span>' : ''}
+            <time datetime="${esc(c.createdAt)}">${esc(ago(c.createdAt))}</time>
+            ${c.canDelete ? `<button type="button" class="link-button" data-delete="${esc(c.id)}">Delete</button>` : ''}
+          </div>
+          <p class="comment-body">${esc(c.body)}</p>
+        </li>`).join('')}</ol>`
+      : '<p class="muted">No comments yet. Ask a question or say hi.</p>';
+
+    body.innerHTML = `${list}
+      <form class="comment-form" id="comment-form">
+        <label for="comment-text">Write a comment</label>
+        <textarea id="comment-text" maxlength="500" placeholder="Running late? Need a lift? Say it here."></textarea>
+        <button type="submit" class="button">Post comment</button>
+      </form>`;
+
+    document.getElementById('comment-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = document.getElementById('comment-text').value.trim();
+      if (!text) return toast('Write something first.');
+      const r = await api(`/games/${game.id}/comments`, { method: 'POST', body: { body: text } });
+      if (!r.ok) return toast(errorText(r.data));
+      toast('Comment posted.');
+      loadComments(game, routeSeq);
+    });
+
+    body.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
+      if (!window.confirm('Delete this comment?')) return;
+      const r = await api(`/games/${game.id}/comments/${b.dataset.delete}`, { method: 'DELETE' });
+      toast(r.ok ? 'Comment deleted.' : errorText(r.data));
+      loadComments(game, routeSeq);
+    }));
+  }
+
   async function handleAction(action, game) {
-    const user = await requireUser();
-    if (!user) return;
+    const titles = { join: 'Sign in to join this game', leave: 'Sign in to GongGo', cancel: 'Sign in to GongGo' };
+    if (!(await requireSignIn(titles[action]))) return;
 
     if (action === 'cancel' && !window.confirm('Cancel this game? Everyone who joined will lose their spot.')) return;
 
     const calls = {
-      join: () => api(`/games/${game.id}/join`, { method: 'POST', user }),
-      leave: () => api(`/games/${game.id}/join`, { method: 'DELETE', user }),
-      cancel: () => api(`/games/${game.id}`, { method: 'DELETE', user }),
+      join: () => api(`/games/${game.id}/join`, { method: 'POST' }),
+      leave: () => api(`/games/${game.id}/join`, { method: 'DELETE' }),
+      cancel: () => api(`/games/${game.id}`, { method: 'DELETE' }),
     };
     const messages = { join: "You're in.", leave: "You've left the game.", cancel: 'Game cancelled.' };
 
+    const seq = routeSeq;
     const res = await calls[action]();
     toast(res.ok ? messages[action] : errorText(res.data));
-    await detailView(game.id, { justJoined: res.ok && action === 'join' });
+    if (!isStale(seq)) await detailView(game.id, { justJoined: res.ok && action === 'join' });
+    if (res.ok && action === 'join') {
+      // They're in: take them to the comments box so they can say hi
+      const comments = document.getElementById('comments-title');
+      if (comments) comments.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  // A friendly card for pages that need an account
+  function signInCard(heading, text, title) {
+    app.innerHTML = `<div class="prompt-card">
+      <h1 tabindex="-1">${esc(heading)}</h1>
+      <p>${esc(text)}</p>
+      <button type="button" class="button" id="card-sign-in">Sign in</button>
+    </div>`;
+    document.getElementById('card-sign-in').addEventListener('click', async () => {
+      if (await requireSignIn(title)) route();
+    });
+  }
+
+  async function meView() {
+    document.title = 'My games: GongGo';
+    if (!profile) {
+      return signInCard('Sign in to see your games',
+        "Games you're hosting or have joined show up here.", 'Sign in to see your games');
+    }
+
+    const seq = routeSeq;
+    const res = await api('/me/games');
+    if (isStale(seq)) return;
+    if (!res.ok) {
+      app.innerHTML = `<h1 tabindex="-1">My games</h1><div class="errors" role="alert">${esc(errorText(res.data))}</div>`;
+      return;
+    }
+
+    const { upcoming, past, historyDays } = res.data;
+    const tagFor = (game, isPast) => {
+      if (game.status === 'cancelled') return '<span class="status-tag cancelled">Cancelled</span>';
+      if (game.role === 'host') return `<span class="status-tag hosting">${isPast ? 'You hosted' : "You're hosting"}</span>`;
+      return isPast ? '<span class="status-tag">Played</span>' : '';
+    };
+    const list = (games, isPast) => `<ul class="games" data-testid="${isPast ? 'past-games' : 'upcoming-games'}">
+      ${games.map((g) => gameRowHtml(g, { withDate: true, tag: tagFor(g, isPast) })).join('')}</ul>`;
+
+    app.innerHTML = `<div class="me-head">
+        <h1 tabindex="-1">My games</h1>
+        <p>Playing as <strong>${esc(profile.name || 'you')}</strong>.
+          <button type="button" class="link-button" id="rename">Change name</button>
+          <button type="button" class="link-button" id="sign-out">Sign out</button></p>
+      </div>
+      <h2 class="day">Coming up</h2>
+      ${upcoming.length ? list(upcoming, false) : '<p class="muted">Nothing coming up. <a href="#/">Find a game</a></p>'}
+      <h2 class="day">Last ${historyDays} days</h2>
+      ${past.length ? list(past, true) : `<p class="muted">No games in the last ${historyDays} days.</p>`}`;
+
+    document.getElementById('rename').addEventListener('click', async () => {
+      if (await askName({ current: profile.name || '' })) {
+        toast('Name changed.');
+        meView();
+      }
+    });
+    document.getElementById('sign-out').addEventListener('click', () => {
+      Auth.signOut();
+      profile = null;
+      renderTopbar();
+      toast('Signed out.');
+      location.hash = '#/';
+    });
   }
 
   function formView() {
     document.title = 'Post a game: GongGo';
+    if (!profile || !profile.name) {
+      return signInCard('Sign in to post a game',
+        'Hosting is free. Sign in so players know who is running the game.', 'Sign in to post a game');
+    }
     const now = new Date(Date.now() + 5 * 60 * 1000);
     const pad = (n) => String(n).padStart(2, '0');
     const localMin = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -408,7 +623,7 @@
     app.innerHTML = `<form class="form" id="game-form" novalidate>
       <a class="back" href="#/">All games</a>
       <h1 tabindex="-1">Post a game</h1>
-      <p class="hint">You can have one upcoming game at a time. You'll take the first spot.</p>
+      <p class="hint">You can host up to two upcoming games at a time. You'll take the first spot.</p>
       <div id="form-errors"></div>
 
       <div class="field">
@@ -466,13 +681,10 @@
       if (!pin) problems.push('Tap the map to show where to meet');
       if (problems.length) return showErrors(errorsEl, problems);
 
-      const user = await requireUser();
-      if (!user) return;
-
       const { lat, lng } = pin.getLatLng();
+      const seq = routeSeq;
       const res = await api('/games', {
         method: 'POST',
-        user,
         body: {
           title: f.title.value,
           sport: f.sport.value,
@@ -485,11 +697,11 @@
 
       if (!res.ok) {
         const list = res.data.errors || [res.data.error || 'Something went wrong. Try again.'];
-        const extra = res.data.gameId ? `<p><a href="#/game/${esc(res.data.gameId)}">See your current game</a></p>` : '';
+        const extra = res.data.gameIds ? '<p><a href="#/me">See my games</a></p>' : '';
         return showErrors(errorsEl, list, extra);
       }
       toast('Game posted.');
-      location.hash = `#/game/${res.data.id}`;
+      if (!isStale(seq)) location.hash = `#/game/${res.data.id}`; // don't move someone who has already left
     });
   }
 
@@ -501,14 +713,16 @@
   // ---------------------------------------------------------------- router
 
   async function route() {
+    routeSeq += 1;
+    const seq = routeSeq;
     destroyMaps();
     app.classList.remove('full-bleed');
     document.body.classList.remove('on-detail', 'on-form');
 
     const hash = location.hash.replace(/^#/, '') || '/';
-    const view = hash.startsWith('/map') ? 'map' : 'list';
-    document.querySelectorAll('.view-toggle a').forEach((a) => {
-      if (a.dataset.view === view && !hash.startsWith('/game') && !hash.startsWith('/new')) a.setAttribute('aria-current', 'page');
+    const view = hash === '/' ? 'list' : hash === '/map' ? 'map' : hash === '/me' ? 'me' : '';
+    document.querySelectorAll('[data-view]').forEach((a) => {
+      if (a.dataset.view === view) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     });
 
@@ -521,9 +735,13 @@
       formView();
     } else if (hash === '/map') {
       await mapView();
+    } else if (hash === '/me') {
+      await meView();
     } else {
       await listView();
     }
+
+    if (isStale(seq)) return; // another page change happened while this one loaded
 
     // Move focus to the new page's heading for screen reader and keyboard users
     const heading = app.querySelector('h1[tabindex]');
@@ -531,19 +749,24 @@
     window.scrollTo(0, 0);
   }
 
-  document.getElementById('me-button').addEventListener('click', async () => {
-    const user = getUser();
-    const name = window.prompt('Change your name', user ? user.name : '');
-    if (name && name.trim()) {
-      // Keep the same id so games you've joined still count as yours
-      const updated = { ...user, name: name.trim() };
-      try { localStorage.setItem('gonggo:user', JSON.stringify(updated)); } catch { /* ignore */ }
-      renderMe();
+  document.getElementById('sign-in-button').addEventListener('click', async () => {
+    if (await requireSignIn('Sign in to GongGo')) {
+      toast("You're signed in.");
       route();
     }
   });
 
   window.addEventListener('hashchange', route);
-  renderMe();
-  route();
+
+  (async function start() {
+    const result = await Auth.init(); // finishes a Cognito sign-in if we just came back from one
+    await loadProfile();
+    renderTopbar();
+    if (result && result.error) toast(result.error);
+    if (result && result.signedIn && profile) {
+      if (!profile.name) await askName();
+      toast("You're signed in.");
+    }
+    route();
+  })();
 })();

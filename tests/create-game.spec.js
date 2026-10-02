@@ -53,31 +53,45 @@ test.describe('Posting a game', () => {
   }
 });
 
-test.describe('One active game per person', () => {
-  test('blocks a second post while the first is active', async ({ request }) => {
+test.describe('Up to two active games per person', () => {
+  test('allows two active games and blocks a third', async ({ request }) => {
     const host = newUser('host');
-    const first = await createGame(request, host);
+    const first = await createGame(request, host, { startsAt: daysFromNow(2) });
+    const second = await createGame(request, host, { title: 'Second one', startsAt: daysFromNow(3) });
 
-    const res = await request.post('/games', { headers: asUser(host), data: validGame({ title: 'Another one' }) });
+    const res = await request.post('/games', { headers: asUser(host), data: validGame({ title: 'Third one' }) });
     expect(res.status()).toBe(409);
-    expect((await res.json()).gameId).toBe(first.id);
+    const body = await res.json();
+    expect(body.error).toContain('2 upcoming games');
+    expect(body.gameIds).toEqual([first.id, second.id]); // soonest first
   });
 
-  test('allows a new post after cancelling the first', async ({ request }) => {
+  test('cancelling one makes room for another', async ({ request }) => {
     const host = newUser('host');
     const first = await createGame(request, host);
+    await createGame(request, host, { title: 'Second one' });
     await request.delete(`/games/${first.id}`, { headers: asUser(host) });
 
-    const res = await request.post('/games', { headers: asUser(host), data: validGame({ title: 'Take two' }) });
+    const res = await request.post('/games', { headers: asUser(host), data: validGame({ title: 'Take three' }) });
     expect(res.status()).toBe(201);
   });
 
   test('counts an unpaid tournament as active', async ({ request }) => {
     const host = newUser('host');
     await createGame(request, host, { type: 'tournament' });
+    await createGame(request, host, { title: 'Casual one' });
 
     const res = await request.post('/games', { headers: asUser(host), data: validGame() });
     expect(res.status()).toBe(409);
+  });
+
+  test('the limit is per person', async ({ request }) => {
+    const host = newUser('host');
+    await createGame(request, host);
+    await createGame(request, host, { title: 'Second one' });
+
+    const res = await request.post('/games', { headers: asUser(newUser('other')), data: validGame() });
+    expect(res.status()).toBe(201);
   });
 });
 

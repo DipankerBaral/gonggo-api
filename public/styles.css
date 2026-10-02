@@ -97,19 +97,14 @@ h1, h2, h3 {
 }
 
 .me {
-  background: none;
-  border: 0;
   color: var(--foam);
-  font: inherit;
-  font-size: 0.9rem;
-  cursor: pointer;
+  font: 600 1.05rem/1 var(--display);
   text-decoration: underline;
-  text-underline-offset: 3px;
-  max-width: 7rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-underline-offset: 4px;
   white-space: nowrap;
 }
+
+.me[aria-current="page"] { text-decoration-thickness: 3px; }
 
 /* ---------- Layout ---------- */
 
@@ -195,6 +190,17 @@ main.full-bleed {
 }
 
 .filters::-webkit-scrollbar { display: none; }
+
+/* On a phone the row scrolls sideways with a swipe. With a mouse there's no
+   way to do that, so on wider screens the chips wrap onto more lines instead. */
+@media (min-width: 48rem) {
+  .filters {
+    flex-wrap: wrap;
+    overflow: visible;
+    margin: 0 0 0.5rem;
+    padding: 0.25rem 0 0.75rem;
+  }
+}
 
 .chip {
   flex: none;
@@ -546,3 +552,115 @@ dialog p { margin: 0 0 1rem; color: var(--ink-soft); }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ---------- My games ---------- */
+
+.me-head h1 { font-size: 2.2rem; margin-bottom: 0.25rem; }
+.me-head p { margin: 0 0 0.5rem; color: var(--ink-soft); }
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sea);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.game-date { font-size: 0.95rem; font-weight: 700; }
+
+.status-tag {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: var(--foam);
+  border: 1px solid var(--line);
+}
+
+.status-tag.hosting { color: var(--sea); border-color: var(--sea); }
+.status-tag.cancelled { color: var(--flag-red-text); border-color: var(--flag-red-text); }
+
+.muted { color: var(--ink-soft); }
+
+.field-error {
+  margin: 0.4rem 0 0;
+  color: var(--flag-red-text);
+  font-weight: 700;
+}
+
+/* ---------- Sign-in ---------- */
+
+.sign-in-button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.signin-options { display: grid; gap: 0.6rem; }
+.signin-options .button { width: 100%; }
+
+.provider {
+  background: var(--foam);
+  color: var(--ink);
+  border-color: #9fb4b1;
+}
+
+.provider:hover { background: var(--spray); border-color: var(--ink); }
+
+.signin-note { margin: 0.25rem 0 0; font-size: 0.9rem; color: var(--ink-soft); }
+
+.dev-badge {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--flag-yellow);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.prompt-card {
+  margin: 1rem 0;
+  padding: 1.25rem;
+  border-radius: 8px;
+  background: var(--foam);
+  border: 1px solid var(--line);
+}
+
+.prompt-card h2 { font-size: 1.5rem; margin-bottom: 0.4rem; }
+.prompt-card p { margin: 0 0 1rem; color: var(--ink-soft); }
+
+/* ---------- Comments ---------- */
+
+.comments { margin-top: 1.5rem; }
+
+.comment-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.comment {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+.comment-meta time { color: var(--ink-soft); }
+.comment-body { margin: 0.2rem 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+
+.comment-form textarea { min-height: 4rem; }
+.comment-form .button { margin-top: 0.5rem; }
