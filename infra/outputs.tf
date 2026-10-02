@@ -1,5 +1,10 @@
 output "app_url" {
-  description = "Public URL of the API"
+  description = "GongGo's public address (HTTPS, through CloudFront)"
+  value       = local.public_url
+}
+
+output "load_balancer_url" {
+  description = "The load balancer itself. Only CloudFront can reach it, so this won't open in a browser."
   value       = "http://${aws_lb.main.dns_name}"
 }
 

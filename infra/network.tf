@@ -79,17 +79,26 @@ resource "aws_route_table_association" "public" {
 # Each layer only accepts traffic from the layer in front of it.
 # ---------------------------------------------------------------------------
 
+# AWS's own, always up-to-date list of the addresses CloudFront uses to reach origins
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
-  name        = "${var.project}-alb"
+  name = "${var.project}-alb"
+  # Kept as it was: AWS can't edit a security group's description, so changing
+  # it would make Terraform replace the group (and it's in use by the ALB)
   description = "Public HTTP to the load balancer"
   vpc_id      = aws_vpc.main.id
 
+  # Only CloudFront can reach the load balancer, so everyone comes in through
+  # HTTPS on CloudFront: there's one front door, not two
   ingress {
-    description = "HTTP from anywhere"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "HTTP from CloudFront"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
   }
 
   egress {

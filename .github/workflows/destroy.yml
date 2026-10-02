@@ -22,7 +22,7 @@ jobs:
   destroy:
     runs-on: ubuntu-latest
     if: github.event.inputs.confirm == 'destroy'
-    timeout-minutes: 30
+    timeout-minutes: 60 # deleting CloudFront and the database each take a while
     steps:
       - uses: actions/checkout@v5
 

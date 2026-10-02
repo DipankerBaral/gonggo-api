@@ -7,8 +7,8 @@
 #   providers -> Google and Apple, each switched on only when configured
 #
 # Cognito only accepts HTTPS sign-in return addresses, except http://localhost.
-# Until GongGo has a domain with HTTPS, sign-in works locally but not on the
-# AWS load balancer's http:// address. Add the https:// address to app_urls.
+# The CloudFront address (cdn.tf) is HTTPS, so sign-in works on AWS. When
+# GongGo gets a domain, add its https:// address to app_urls.
 # ---------------------------------------------------------------------------
 
 data "aws_caller_identity" "current" {}
@@ -18,7 +18,7 @@ locals {
   apple_enabled  = var.apple_services_id != ""
 
   # Where Cognito may send people back to after signing in or out
-  return_urls = concat(["http://localhost:3000/"], var.app_urls)
+  return_urls = concat(["http://localhost:3000/", "${local.public_url}/"], var.app_urls)
 
   identity_providers = concat(
     ["COGNITO"],
