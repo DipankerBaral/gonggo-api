@@ -1,9 +1,12 @@
-# GongGo API
+# GongGo
 
 [![CI](https://github.com/DipankerBaral/gonggo-api/actions/workflows/ci.yml/badge.svg)](https://github.com/DipankerBaral/gonggo-api/actions/workflows/ci.yml)
 
 Find and join local games and community events around Wollongong: soccer, basketball,
 running, table tennis and more. See how many spots are left and jump in.
+
+A mobile-first web app (`public/`) on top of a Node.js + Postgres API (`src/`), deployed to
+AWS by GitHub Actions and Terraform (`infra/`).
 
 ## Run it
 
@@ -28,9 +31,22 @@ npm start
 
 ```bash
 docker compose up -d db
-npm test                                   # Playwright starts the API on port 3001
+npx playwright install chromium            # once, for the UI tests
+npm test                                   # everything: API + UI on desktop and mobile
+npm run test:api                           # just the API tests
+npm run test:ui                            # just the browser tests
 BASE_URL=http://localhost:3000 npm test    # or test the full Docker stack
 ```
+
+- **API tests** (`tests/*.spec.js`): every game rule, validation and permission
+- **UI tests** (`tests/ui/`): browsing, filtering, the map, joining, leaving, posting and
+  cancelling, run on a desktop browser and a phone-sized one, with automated WCAG 2.1 AA
+  accessibility checks (axe) and an XSS check
+
+## Web app
+
+Plain HTML, CSS and JavaScript in `public/`, no build step. Leaflet and the fonts are served
+from npm packages, not third-party CDNs. Map tiles come from OpenStreetMap.
 
 ## Configuration
 

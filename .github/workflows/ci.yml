@@ -53,7 +53,10 @@ jobs:
       - name: Install dependencies
         run: npm ci         # like npm install, but exact versions from the lockfile
 
-      - name: Run Playwright API tests
+      - name: Install Chromium for the UI tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright API and UI tests
         run: npm test
         env:
           ADMIN_KEY: ci-admin-key
@@ -85,6 +88,9 @@ jobs:
 
       - name: Install test dependencies
         run: npm ci
+
+      - name: Install Chromium for the UI tests
+        run: npx playwright install --with-deps chromium
 
       - name: Build and start the stack
         run: docker compose up -d --build --wait   # --wait blocks until both containers are healthy

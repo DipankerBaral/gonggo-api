@@ -11,6 +11,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Now copy the app code (tests and dev tools stay out; see .dockerignore)
 COPY src ./src
+COPY public ./public
 
 # Don't run as root inside the container: the node image ships a "node" user
 USER node

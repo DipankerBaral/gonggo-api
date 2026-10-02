@@ -1,0 +1,548 @@
+/* GongGo: colours from Wollongong's beaches, type from the scoreboard. */
+:root {
+  --ink: #12313b;        /* harbour at night: text */
+  --ink-soft: #4a6570;   /* secondary text */
+  --sea: #0a6a78;        /* ocean pool: actions and links */
+  --sea-dark: #07525d;
+  --spray: #eef4f3;      /* background */
+  --foam: #ffffff;       /* surfaces */
+  --flag-yellow: #f2c230;/* open spots */
+  --flag-red: #cf3a2e;   /* last spots, full, errors (fills) */
+  --flag-red-text: #b02b21; /* the same red, deep enough for text (WCAG AA contrast) */
+  --line: #d3e0de;
+
+  --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --body: 'Atkinson Hyperlegible', system-ui, sans-serif;
+
+  --topbar-h: 3.5rem;
+  --pad: 1rem;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--spray);
+  color: var(--ink);
+  font: 1rem/1.5 var(--body);
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+a { color: var(--sea); }
+
+:focus-visible {
+  outline: 3px solid var(--sea);
+  outline-offset: 2px;
+}
+
+h1, h2, h3 {
+  font-family: var(--display);
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 0;
+}
+
+/* ---------- Top bar ---------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--pad) 0;
+  background: var(--ink);
+  color: var(--foam);
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--foam);
+  text-decoration: none;
+  font: 700 1.6rem/1 var(--display);
+  letter-spacing: 0.01em;
+}
+
+/* The surf lifesaving flag: red over yellow, split on the diagonal */
+.flag {
+  width: 1.1rem;
+  height: 1.1rem;
+  background: linear-gradient(135deg, var(--flag-red) 50%, var(--flag-yellow) 50%);
+}
+
+.view-toggle {
+  display: flex;
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.view-toggle a {
+  padding: 0.3rem 0.9rem;
+  color: var(--foam);
+  text-decoration: none;
+  font: 600 1.05rem/1.4 var(--display);
+}
+
+.view-toggle a[aria-current="page"] {
+  background: var(--foam);
+  color: var(--ink);
+}
+
+.me {
+  background: none;
+  border: 0;
+  color: var(--foam);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Layout ---------- */
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--pad);
+}
+
+main:focus,
+h1[tabindex="-1"]:focus { outline: none; } /* focus moves here on page change; no box needed */
+
+main.full-bleed {
+  max-width: none;
+  padding: 0;
+}
+
+/* ---------- Buttons ---------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.25rem;
+  border: 2px solid var(--sea);
+  border-radius: 6px;
+  background: var(--sea);
+  color: var(--foam);
+  font: 700 1.15rem/1 var(--display);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover { background: var(--sea-dark); border-color: var(--sea-dark); }
+
+.button.quiet {
+  background: transparent;
+  color: var(--sea);
+}
+
+.button.quiet:hover { background: rgba(10, 106, 120, 0.08); }
+
+.button.danger {
+  background: transparent;
+  border-color: var(--flag-red-text);
+  color: var(--flag-red-text);
+}
+
+.button:disabled {
+  background: var(--line);
+  border-color: var(--line);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+.post-button {
+  position: fixed;
+  right: var(--pad);
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+  z-index: 1000;
+  padding: 0.85rem 1.3rem;
+  border-radius: 999px;
+  background: var(--flag-yellow);
+  color: var(--ink);
+  font: 700 1.2rem/1 var(--display);
+  text-decoration: none;
+  box-shadow: 0 6px 18px rgba(18, 49, 59, 0.25);
+}
+
+.post-button:hover { background: #e3b21c; }
+
+/* ---------- Sport filter ---------- */
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  margin: 0 calc(var(--pad) * -1) 0.5rem;
+  padding: 0.25rem var(--pad) 0.75rem;
+  scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex: none;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--foam);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--foam);
+}
+
+/* ---------- Game list ---------- */
+
+.day {
+  margin: 1.5rem 0 0.25rem;
+  font-size: 1.35rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.day:first-of-type { margin-top: 0.5rem; }
+
+.games {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.game {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0.25rem 0.75rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.game:hover .game-title { text-decoration: underline; }
+
+.game-time {
+  font: 700 1.9rem/1 var(--display);
+  white-space: nowrap;
+}
+
+.game-time small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.game-sport {
+  font: 600 1rem/1.2 var(--display);
+  color: var(--sea);
+  letter-spacing: 0.02em;
+}
+
+.game-title {
+  font: 700 1.35rem/1.15 var(--display);
+  margin: 0.1rem 0 0.2rem;
+}
+
+.game-place {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.game .roster-row { grid-column: 2; }
+
+/* ---------- The squad sheet ---------- */
+
+.roster-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.spot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 2px;
+}
+
+.spot.taken { background: var(--ink); }
+.spot.open { background: var(--flag-yellow); box-shadow: inset 0 0 0 1px #c89b10; }
+
+.roster.large .spot { width: 1.4rem; height: 1.4rem; border-radius: 3px; }
+
+.roster-bar {
+  width: 10rem;
+  height: 0.8rem;
+  border-radius: 2px;
+  background: var(--flag-yellow);
+  overflow: hidden;
+}
+
+.roster-bar span { display: block; height: 100%; background: var(--ink); }
+
+.spots-left {
+  font: 700 1.05rem/1 var(--display);
+}
+
+.spots-left.last,
+.spots-left.full { color: var(--flag-red-text); }
+
+/* A spot filling in when you join: the one moment of motion */
+.spot.just-taken { animation: fill-spot 360ms ease-out; }
+
+@keyframes fill-spot {
+  0% { transform: scale(1); background: var(--flag-yellow); }
+  50% { transform: scale(1.35); }
+  100% { transform: scale(1); background: var(--ink); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spot.just-taken { animation: none; }
+}
+
+/* ---------- Empty and error states ---------- */
+
+.empty {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  border: 2px dashed var(--line);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.empty h2 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+.empty p { margin: 0 0 1rem; color: var(--ink-soft); }
+
+.errors {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--flag-red);
+  background: #fbeceb;
+}
+
+.errors ul { margin: 0; padding-left: 1.2rem; }
+
+/* ---------- Game page ---------- */
+
+.back {
+  display: inline-block;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.detail-sport { font: 600 1.15rem/1 var(--display); color: var(--sea); }
+.detail h1 { font-size: 2.4rem; margin: 0.25rem 0 1rem; }
+
+.facts { margin: 0 0 1rem; }
+.facts dt { font-weight: 700; }
+.facts dd { margin: 0 0 0.75rem; }
+
+.mini-map {
+  height: 12rem;
+  border-radius: 6px;
+  margin-bottom: 1.25rem;
+  z-index: 0;
+}
+
+.description { white-space: pre-line; margin: 0 0 1.25rem; }
+
+.detail h2 { font-size: 1.5rem; margin: 1.5rem 0 0.5rem; }
+
+.players {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  columns: 2;
+}
+
+.players li { padding: 0.15rem 0; }
+.players .tag { color: var(--ink-soft); font-size: 0.85rem; }
+
+.action-bar {
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--foam);
+  box-shadow: 0 4px 20px rgba(18, 49, 59, 0.15);
+}
+
+.action-bar .button { flex: 1; }
+.action-bar p { margin: 0; align-self: center; flex: 1; }
+
+.report {
+  margin-top: 2rem;
+  font-size: 0.9rem;
+}
+
+.report summary { cursor: pointer; color: var(--ink-soft); }
+.report form { margin-top: 0.75rem; }
+
+/* On the game page, the join bar replaces the post button */
+body.on-detail .post-button,
+body.on-form .post-button { display: none; }
+
+/* ---------- Forms ---------- */
+
+.form h1 { font-size: 2.2rem; margin-bottom: 0.25rem; }
+.form .hint { margin: 0 0 1.25rem; color: var(--ink-soft); }
+.form > .button[type="submit"] { width: 100%; }
+@media (min-width: 48rem) { .form > .button[type="submit"] { width: auto; } }
+
+.field { margin-bottom: 1.1rem; }
+
+label, .label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 700;
+}
+
+input, select, textarea {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #9fb4b1;
+  border-radius: 6px;
+  background: var(--foam);
+  color: var(--ink);
+  font: inherit;
+}
+
+textarea { min-height: 5rem; resize: vertical; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 7rem;
+  gap: 0.75rem;
+}
+
+.pick-map {
+  height: 16rem;
+  border-radius: 6px;
+  border: 1px solid #9fb4b1;
+  z-index: 0;
+}
+
+.pick-status { margin: 0.4rem 0 0; font-size: 0.95rem; color: var(--ink-soft); }
+.pick-status.done { color: var(--sea); font-weight: 700; }
+
+/* ---------- Big map ---------- */
+
+.big-map {
+  height: calc(100dvh - var(--topbar-h) - env(safe-area-inset-top));
+  z-index: 0;
+}
+
+.pin {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--ink);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--flag-yellow);
+  box-shadow: 0 2px 6px rgba(18, 49, 59, 0.35);
+}
+
+.pin span {
+  transform: rotate(45deg);
+  font: 700 0.95rem/1 var(--display);
+  color: var(--ink);
+}
+
+.pin.last { background: var(--flag-red); }
+.pin.last span { color: var(--foam); }
+
+.popup-title { font: 700 1.15rem/1.15 var(--display); margin: 0 0 0.2rem; }
+.leaflet-popup-content { font-family: var(--body); margin: 0.75rem 1rem; }
+
+/* ---------- Dialog and toast ---------- */
+
+dialog {
+  width: min(92vw, 24rem);
+  border: 0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: var(--ink);
+}
+
+dialog::backdrop { background: rgba(18, 49, 59, 0.55); }
+dialog h2 { font-size: 1.7rem; margin-bottom: 0.4rem; }
+dialog p { margin: 0 0 1rem; color: var(--ink-soft); }
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  z-index: 2000;
+  transform: translateX(-50%);
+  padding: 0.7rem 1.2rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--foam);
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms;
+}
+
+.toast.show { opacity: 1; }
+
+@media (min-width: 48rem) {
+  .game { grid-template-columns: 5.5rem 1fr; }
+  .detail h1 { font-size: 3rem; }
+}
+
+.tag { color: var(--ink-soft); font-weight: 400; font-size: 0.9em; }
+
+/* Read by screen readers, hidden on screen */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

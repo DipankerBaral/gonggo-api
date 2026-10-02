@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const { pool } = require('./db/pool');
 const gamesRouter = require('./routes/games');
@@ -19,6 +20,15 @@ app.get('/health', async (req, res) => {
 
 app.use('/games', gamesRouter);
 app.use('/admin', adminRouter);
+
+// ---- The web app (UI) ----
+// Libraries come from npm packages rather than third-party CDNs, so the app
+// has no outside dependencies and loads the same locally, in Docker and on AWS.
+const pkgDir = (file) => path.dirname(require.resolve(file));
+app.use('/vendor/leaflet', express.static(pkgDir('leaflet/dist/leaflet.js'), { maxAge: '7d' }));
+app.use('/vendor/fonts/barlow-condensed', express.static(pkgDir('@fontsource/barlow-condensed/700.css'), { maxAge: '7d' }));
+app.use('/vendor/fonts/atkinson-hyperlegible', express.static(pkgDir('@fontsource/atkinson-hyperlegible/400.css'), { maxAge: '7d' }));
+app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '5m' }));
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

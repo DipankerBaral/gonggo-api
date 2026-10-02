@@ -9,16 +9,22 @@
     "dev": "node --watch src/server.js",
     "test": "playwright test",
     "test:report": "playwright show-report",
-    "migrate": "node src/db/migrate.js"
+    "migrate": "node src/db/migrate.js",
+    "test:api": "playwright test --project=api",
+    "test:ui": "playwright test --project=ui-desktop --project=ui-mobile"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/barlow-condensed": "^5.3.0",
     "express": "^4.21.2",
+    "leaflet": "^1.9.4",
     "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.2"
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.56.1"
   }
 }

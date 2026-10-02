@@ -1,11 +1,14 @@
 // @ts-check
-const { defineConfig } = require('@playwright/test');
+const { defineConfig, devices } = require('@playwright/test');
 
 // Where are we testing?
 //  - No BASE_URL: Playwright starts the API itself on port 3001 (local runs, CI)
-//  - BASE_URL set: test an already running API (a Docker container, AWS later)
+//  - BASE_URL set: test an already running app (a Docker container, AWS)
 const PORT = process.env.TEST_PORT || 3001;
 const baseURL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// Browser tests behave like someone in Wollongong
+const inWollongong = { timezoneId: 'Australia/Sydney', locale: 'en-AU' };
 
 module.exports = defineConfig({
   testDir: './tests',
@@ -13,7 +16,21 @@ module.exports = defineConfig({
   forbidOnly: !!process.env.CI, // fail CI if someone leaves test.only in
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
-  use: { baseURL },
+  use: {
+    baseURL,
+    trace: 'retain-on-failure',       // a step-by-step recording of failed browser tests
+    screenshot: 'only-on-failure',
+  },
+
+  projects: [
+    // API tests: HTTP only, no browser
+    { name: 'api', testIgnore: /ui\// },
+
+    // UI tests: the same specs on a desktop browser and a phone-sized one
+    { name: 'ui-desktop', testMatch: /ui\/.*\.spec\.js/, use: { ...devices['Desktop Chrome'], ...inWollongong } },
+    { name: 'ui-mobile', testMatch: /ui\/.*\.spec\.js/, use: { ...devices['Pixel 7'], ...inWollongong } },
+  ],
+
   webServer: process.env.BASE_URL
     ? undefined
     : {
