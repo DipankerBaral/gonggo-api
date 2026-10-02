@@ -154,3 +154,38 @@ return addresses (plus `http://localhost`), so real sign-in on AWS needs a domai
 
 - **Rate limit counts live in memory**, per container. Move them to Redis if running several.
 - **Tests share the database** with the app you run locally; a separate test database is planned.
+
+## Backups and recovery
+
+Production data is protected by default (`protect_data` in `infra/variables.tf`):
+
+- **The database** has deletion protection, daily backups kept for 7 days, and point-in-time
+  recovery. Deleting it on purpose leaves a final snapshot, `gonggo-db-final`.
+- **Cognito** (the accounts) has deletion protection. It has no backups, which is why this matters.
+
+### Restore the database to a point in time
+
+For example, to just before a bad change. This creates a **new** database next to the old one;
+nothing is overwritten.
+
+```bash
+aws rds describe-db-instances --db-instance-identifier gonggo-db \
+  --query 'DBInstances[0].[EarliestRestorableTime,LatestRestorableTime]'   # the window you can restore within
+
+aws rds restore-db-instance-to-point-in-time \
+  --source-db-instance-identifier gonggo-db \
+  --target-db-instance-identifier gonggo-db-restored \
+  --restore-time 2026-10-02T03:15:00Z \
+  --db-subnet-group-name gonggo-db \
+  --vpc-security-group-ids "$(aws ec2 describe-security-groups --filters Name=group-name,Values=gonggo-db --query 'SecurityGroups[0].GroupId' --output text)" \
+  --no-publicly-accessible
+```
+
+Check the data in `gonggo-db-restored`, then point the app at it (update `/gonggo/database-url`
+in Parameter Store and redeploy) or copy the rows you need back.
+
+### Tearing everything down on purpose
+
+1. Set the repo variable `PROTECT_DATA` to `false`.
+2. Run **Actions → CI → Run workflow** so protection is switched off.
+3. Run **Actions → Destroy AWS infrastructure**. While protection is on, it refuses.

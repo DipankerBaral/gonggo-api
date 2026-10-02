@@ -62,3 +62,15 @@ variable "apple_key_id" {
   type    = string
   default = ""
 }
+
+# ---- Protecting real data
+
+variable "protect_data" {
+  description = <<-EOT
+    Protect real users' data: deletion protection on the database and on
+    Cognito (the accounts), and a final snapshot if the database is deleted.
+    Set false only when you mean to tear everything down (see README).
+  EOT
+  type        = bool
+  default     = true
+}

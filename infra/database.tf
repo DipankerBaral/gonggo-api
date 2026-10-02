@@ -31,12 +31,22 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.db.id]
   publicly_accessible    = false
 
-  backup_retention_period = 1
-  multi_az                = false # one copy; production would use true
+  # Grows by itself (20 GB up to 50 GB) rather than the app breaking when full
+  max_allocated_storage = 50
 
-  # Learning-project settings so "terraform destroy" works cleanly.
-  # In production you'd keep a final snapshot and turn on deletion protection.
-  skip_final_snapshot = true
-  deletion_protection = false
-  apply_immediately   = true
+  # Daily backups kept for a week, which also allows point-in-time recovery:
+  # restoring the database to any minute in the last 7 days (see README).
+  backup_retention_period = 7
+  backup_window           = "16:00-16:30"         # 2:00am Sydney (AEST), when nobody's playing
+  maintenance_window      = "sun:17:00-sun:17:30" # 3:00am Sunday Sydney: minor updates
+  copy_tags_to_snapshot   = true
+
+  multi_az = false # one copy keeps costs down; true would survive a data-centre failure, at double the price
+
+  # With protect_data on (the default), nothing can delete the database, and
+  # deleting it on purpose leaves a final snapshot behind.
+  deletion_protection       = var.protect_data
+  skip_final_snapshot       = !var.protect_data
+  final_snapshot_identifier = var.protect_data ? "${var.project}-db-final" : null
+  apply_immediately         = true
 }

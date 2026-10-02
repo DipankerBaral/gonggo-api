@@ -269,29 +269,15 @@ jobs:
           echo "Waiting for $SERVICE to become stable..."
           aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
 
-          # "Stable" comes slightly before ECS marks the rollout COMPLETED, and it
-          # can also mean ECS rolled BACK to the old version. So keep watching
-          # until there's a final answer, and check it's the NEW version that won.
-          STATE=""
-          for _ in $(seq 1 60); do   # up to 10 minutes
-            # shellcheck disable=SC2016  # the backticks below are AWS CLI query syntax, not shell
-            read -r RUNNING STATE < <(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-              --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState]' --output text)
-            echo "Rollout: $STATE, running ${RUNNING##*/} (expected ${EXPECTED##*/})"
-
-            if [ "$RUNNING" != "$EXPECTED" ]; then
-              echo "::error::ECS rolled back to ${RUNNING##*/}: the new version did not become healthy. Check the logs in CloudWatch."
-              exit 1
-            fi
-            case "$STATE" in
-              COMPLETED) echo "New version is live."; break ;;
-              FAILED) echo "::error::The rollout failed. Check the logs in CloudWatch."; exit 1 ;;
-            esac
-            sleep 10
-          done
-
-          if [ "$STATE" != "COMPLETED" ]; then
-            echo "::error::Timed out after 10 minutes with the rollout still $STATE."
+          # "Stable" can also mean ECS rolled BACK to the old version after the
+          # new one failed its health checks. Make sure the new version won.
+          # shellcheck disable=SC2016  # the backticks below are AWS CLI query syntax, not shell
+          read -r RUNNING STATE < <(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState]' --output text)
+          echo "Running: $RUNNING ($STATE)"
+          echo "Expected: $EXPECTED"
+          if [ "$RUNNING" != "$EXPECTED" ] || [ "$STATE" != "COMPLETED" ]; then
+            echo "::error::The new version did not become healthy. ECS rolled back to the previous version. Check the logs in CloudWatch."
             exit 1
           fi
 

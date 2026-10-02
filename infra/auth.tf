@@ -61,7 +61,8 @@ resource "aws_cognito_user_pool" "main" {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
-  deletion_protection = "INACTIVE" # set to ACTIVE once real people have accounts
+  # Accounts can't be deleted by accident. (Cognito has no backups, so this matters.)
+  deletion_protection = var.protect_data ? "ACTIVE" : "INACTIVE"
 }
 
 resource "aws_cognito_user_pool_domain" "main" {
