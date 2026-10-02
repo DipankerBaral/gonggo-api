@@ -32,6 +32,10 @@ locals {
 resource "aws_cognito_user_pool" "main" {
   name = var.project
 
+  # Essentials includes Managed Login (the branded sign-in pages) and passkeys.
+  # Free for the first 10,000 monthly active users.
+  user_pool_tier = "ESSENTIALS"
+
   username_attributes      = ["email"] # people sign in with their email address
   auto_verified_attributes = ["email"] # Cognito emails a code to prove it's theirs
 
@@ -63,6 +67,10 @@ resource "aws_cognito_user_pool" "main" {
 resource "aws_cognito_user_pool_domain" "main" {
   domain       = "${var.project}-${data.aws_caller_identity.current.account_id}"
   user_pool_id = aws_cognito_user_pool.main.id
+
+  # 2 = the newer Managed Login pages, which can carry GongGo's branding
+  # (1 is the old, plain "classic Hosted UI")
+  managed_login_version = 2
 }
 
 # --- Google (free) ----------------------------------------------------------
@@ -171,4 +179,33 @@ resource "aws_cognito_user_group" "admins" {
   name         = "admins"
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "GongGo moderators: can review reports, remove content and ban people"
+}
+
+# --- Branded sign-in pages ----------------------------------------------------
+# GongGo's colours, logo and favicon on Cognito's sign-in and sign-up pages.
+# settings.json follows AWS's documented format; to fine-tune visually, use the
+# branding designer in the console, then export with:
+#   aws cognito-idp describe-managed-login-branding-by-client \
+#     --user-pool-id <pool> --client-id <client> --return-merged-resources
+
+resource "aws_cognito_managed_login_branding" "web" {
+  user_pool_id = aws_cognito_user_pool.main.id
+  client_id    = aws_cognito_user_pool_client.web.id
+  settings     = file("${path.module}/branding/settings.json")
+
+  asset {
+    category   = "FORM_LOGO"
+    color_mode = "LIGHT"
+    extension  = "SVG"
+    bytes      = filebase64("${path.module}/branding/logo.svg")
+  }
+
+  asset {
+    category   = "FAVICON_SVG"
+    color_mode = "LIGHT"
+    extension  = "SVG"
+    bytes      = filebase64("${path.module}/branding/favicon.svg")
+  }
+
+  depends_on = [aws_cognito_user_pool_domain.main]
 }
